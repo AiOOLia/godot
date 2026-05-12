@@ -1,0 +1,10 @@
+#!/usr/bin/env python
+from misc.utility.scons_hints import *
+
+Import("env")
+
+env_digital = env.Clone()
+env_digital_sources = []
+env_digital.add_source_files(env_digital_sources, "*.cpp")
+lib = env_digital.add_library("digital_viewer_app", env_digital_sources)
+env.Append(LIBS=[lib])

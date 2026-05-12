@@ -9,7 +9,13 @@ env.main_sources = []
 
 env_main = env.Clone()
 
-env_main.add_source_files(env.main_sources, "*.cpp")
+env_main.add_source_files(env.main_sources, "main_timer_sync.cpp")
+env_main.add_source_files(env.main_sources, "performance.cpp")
+env_main.add_source_files(env.main_sources, "steam_tracker.cpp")
+if env["target"] == "digital_viewer":
+    env_main.add_source_files(env.main_sources, "DigitalViewerMain.cpp")
+else:
+    env_main.add_source_files(env.main_sources, "main.cpp")
 
 if env["steamapi"] and env.editor_build:
     env_main.Append(CPPDEFINES=["STEAMAPI_ENABLED"])

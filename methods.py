@@ -1401,7 +1401,7 @@ def generate_vs_project(env, original_args, project_name="godot"):
         #
         # When both Windows and Mac define an editor target, it's defined as platform+target+arch (windows+editor+x64 for example).
         # VS only supports two attributes, a "Configuration" and a "Platform", and we currently map our target to the Configuration
-        # (i.e. editor/template_debug/template_release), and our architecture to the "Platform" (i.e. x64, arm64, etc).
+        # (i.e. editor/template_debug/template_release/digital_viewer), and our architecture to the "Platform" (i.e. x64, arm64, etc).
         # Those two are not enough to disambiguate multiple godot targets for different godot platforms with the same architecture,
         # i.e. editor|x64 would currently match both windows editor intel 64 and linux editor intel 64.
         #

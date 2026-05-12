@@ -550,7 +550,7 @@ def configure_msvc(env: "SConsEnvironment"):
                 )
                 env["angle"] = False
 
-    if env["target"] in ["editor", "template_debug"]:
+    if env["target"] in ["editor", "template_debug", "digital_viewer"]:
         LIBS += ["psapi", "dbghelp"]
 
     if env["use_llvm"]:

@@ -8,7 +8,7 @@ def get_platforms():
 
 
 def get_configurations():
-    return ["editor", "template_debug", "template_release"]
+    return ["digital_viewer", "editor", "template_debug", "template_release"]
 
 
 def get_build_prefix(env):

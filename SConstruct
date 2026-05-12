@@ -161,7 +161,11 @@ opts = Variables(customs, ARGUMENTS)
 opts.Add((["platform", "p"], "Target platform (%s)" % "|".join(platform_list), ""))
 opts.Add(
     EnumVariable(
-        "target", "Compilation target", "editor", ["editor", "template_release", "template_debug"], ignorecase=2
+        "target",
+        "Compilation target",
+        "editor",
+        ["editor", "template_release", "template_debug", "digital_viewer"],
+        ignorecase=2,
     )
 )
 opts.Add(EnumVariable("arch", "CPU architecture", "auto", ["auto"] + architectures, architecture_aliases, ignorecase=2))
@@ -532,7 +536,7 @@ env.platform_apis = platform_apis
 
 env.editor_build = env["target"] == "editor"
 env.dev_build = env["dev_build"]
-env.debug_features = env["target"] in ["editor", "template_debug"]
+env.debug_features = env["target"] in ["editor", "template_debug", "digital_viewer"]
 
 if env["optimize"] == "auto":
     if env.dev_build:
@@ -1235,6 +1239,8 @@ SConscript("modules/SCsub")
 if env["tests"]:
     SConscript("tests/SCsub")
 SConscript("main/SCsub")
+if env["target"] == "digital_viewer":
+    SConscript("DigitalViewer/SCsub")
 
 SConscript("platform/" + env["platform"] + "/SCsub")  # Build selected platform.
 

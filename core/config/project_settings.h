@@ -197,6 +197,8 @@ public:
 	bool is_builtin_setting(const String &p_name) const;
 
 	Error setup(const String &p_path, const String &p_main_pack, bool p_upwards = false, bool p_ignore_override = false);
+	// No project.godot or main pack: use built-in defaults and map res:// to p_resource_dir (e.g. executable directory).
+	Error setup_standalone_application(const String &p_resource_dir);
 
 	Error load_custom(const String &p_path);
 	Error save_custom(const String &p_path = "", const CustomMap &p_custom = CustomMap(), const Vector<String> &p_custom_features = Vector<String>(), bool p_merge_with_current = true);

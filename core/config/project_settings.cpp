@@ -900,6 +900,36 @@ Error ProjectSettings::setup(const String &p_path, const String &p_main_pack, bo
 	return err;
 }
 
+Error ProjectSettings::setup_standalone_application(const String &p_resource_dir) {
+	// Used by embedded / forked apps that ship as a plain executable without project.godot or PCK.
+	resource_path = p_resource_dir.simplify_path().replace_char('\\', '/');
+	if (resource_path.is_empty()) {
+		resource_path = OS::get_singleton()->get_cwd().replace_char('\\', '/');
+	}
+	while (resource_path.ends_with("/") && resource_path.length() > 1) {
+		resource_path = resource_path.substr(0, resource_path.length() - 1);
+	}
+	using_datapack = false;
+
+	set_setting("application/config/name", "DigitalViewer");
+
+	bool use_hidden_directory = GLOBAL_GET("application/config/use_hidden_project_data_directory");
+	project_data_dir_name = (use_hidden_directory ? "." : "") + PROJECT_DATA_DIR_NAME_SUFFIX;
+
+	Compression::zstd_long_distance_matching = GLOBAL_GET("compression/formats/zstd/long_distance_matching");
+	Compression::zstd_level = GLOBAL_GET("compression/formats/zstd/compression_level");
+	Compression::zstd_window_log_size = GLOBAL_GET("compression/formats/zstd/window_log_size");
+
+	Compression::zlib_level = GLOBAL_GET("compression/formats/zlib/compression_level");
+
+	Compression::gzip_level = GLOBAL_GET("compression/formats/gzip/compression_level");
+
+	load_scene_groups_cache();
+
+	project_loaded = true;
+	return OK;
+}
+
 bool ProjectSettings::has_setting(const String &p_var) const {
 	_THREAD_SAFE_METHOD_
 
