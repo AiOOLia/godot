@@ -2472,6 +2472,16 @@ Error Main::setup2(bool p_show_boot_logo) {
 			if (bool(GLOBAL_GET("display/window/size/transparent"))) {
 				window_flags |= DisplayServerEnums::WINDOW_FLAG_TRANSPARENT_BIT;
 			}
+		} else {
+			// DigitalViewer: merge menu strip with caption like desktop IDE shells.
+			// - macOS: native transparent title + traffic lights (DisplayServer implements EXTEND_TO_TITLE).
+			// - Windows: no EXTEND_TO_TITLE support — use borderless window + in-app caption / drag region (see DigitalViewerRoot).
+#ifdef MACOS_ENABLED
+			window_flags |= DisplayServerEnums::WINDOW_FLAG_EXTEND_TO_TITLE_BIT;
+#endif
+#ifdef WINDOWS_ENABLED
+			window_flags |= DisplayServerEnums::WINDOW_FLAG_BORDERLESS_BIT;
+#endif
 		}
 
 
@@ -3375,6 +3385,16 @@ int Main::start() {
 					GLOBAL_GET("display/window/size/viewport_height"));
 			real_t stretch_scale = GLOBAL_GET("display/window/stretch/scale");
 			String stretch_scale_mode = GLOBAL_GET("display/window/stretch/scale_mode");
+
+			// With stretch "disabled", the root viewport uses window pixels; theme font sizes do not grow when
+			// maximizing (only layout gains area). Scale by monitor DPI so glyphs match system text scaling.
+			if (stretch_mode == "disabled" && OS::get_singleton()->is_hidpi_allowed()) {
+				const int screen = DisplayServer::get_singleton()->window_get_current_screen(DisplayServerEnums::MAIN_WINDOW_ID);
+				const float mon_scale = DisplayServer::get_singleton()->screen_get_scale(screen);
+				if (mon_scale > 1.0f) {
+					stretch_scale *= 1 + (mon_scale - 1) * 0.5f;
+				}
+			}
 
 			Window::ContentScaleMode cs_sm = Window::CONTENT_SCALE_MODE_DISABLED;
 			if (stretch_mode == "canvas_items") {

@@ -77,9 +77,10 @@ scons target=digital_viewer platform=windows msvc_version=14.5 accesskit=no d3d1
 - 通用模板二进制会在当前目录查找 **`project.godot`** 或同名 **`.pck`**。
 - 本 Fork 在 **`Main::setup`**（`DigitalViewerMain.cpp`）中，当**未**指定 **`--path`**、**`--main-pack`** 且工程路径为默认 **`"."`** 时，调用 **`ProjectSettings::setup_standalone_application(可执行文件目录)`**（见 `core/config/project_settings.cpp`）：
   - **不读取**磁盘上的 `project.godot`；
-  - 使用引擎已注册的 **GLOBAL_DEF** 默认值；
+  - 除 **GLOBAL_DEF** 外，仅设置应用名；显示与拉伸见 **`DigitalViewer/project.godot`**（桌面壳默认 **`stretch/mode=disabled`**，字号不随窗口缩放；HiDPI 由 Main 对 **`content_scale_factor` × `screen_get_scale()`** 处理）。
   - 将 **`res://`** 映射到**可执行文件所在目录**（便于随 exe 携带资源；无文件亦可启动）。
-- 若你需要传统 Godot 工程（脚本、`tscn` 等），仍可用：  
+- 开发调试可：`your.exe --path /path/to/repo/DigitalViewer`（使用仓库内 **`DigitalViewer/project.godot`**）。
+- 若你需要其它 Godot 工程（脚本、`tscn` 等），仍可用：  
   `your.exe --path D:\MyGame`
 - 界面壳在 **`DigitalViewerRoot`**（`digital_viewer_root.cpp`）中搭建，可按产品需求扩展。
 

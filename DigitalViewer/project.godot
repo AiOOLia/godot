@@ -1,0 +1,16 @@
+; DigitalViewer — stretch "disabled": 控件与字体以窗口像素为坐标，随窗口放大的是布局空间而非字号。
+; HiDPI 下字号由 Main 将 content_scale_factor 乘以 screen_get_scale()（与窗口宽高无关）。
+; 开发：godot.windows.digital_viewer.x86_64.exe --path DigitalViewer
+
+config_version=5
+
+[application]
+
+config/name="DigitalViewer"
+
+[display]
+
+window/size/viewport_width=1600
+window/size/viewport_height=900
+window/stretch/mode="disabled"
+window/stretch/scale=1.0
