@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  digital_viewer_root.h                                                 */
+/*  main_window.h                                                         */
 /**************************************************************************/
 /*                         This is part of DigitalViewer fork app code.    */
 /**************************************************************************/
@@ -11,18 +11,18 @@
 
 class Camera3D;
 class FileDialog;
-class HSplitContainer;
 class Label;
 class Node3D;
 class PanelContainer;
 class SubViewport;
-class TabContainer;
 class Tree;
 class TreeItem;
 
-// Full-window UI: title strip, left structure dock (tab), center 3D viewport, right properties dock, status bar.
-class DigitalViewerRoot : public Control {
-	GDCLASS(DigitalViewerRoot, Control);
+namespace dw {
+
+/** Full-window main UI shell: caption strip, structure dock, 3D viewport, properties dock, status bar. */
+class MainWindow : public Control {
+	GDCLASS(MainWindow, Control);
 
 	enum ImportMenuItem {
 		MENU_IMPORT_GLTF = 1,
@@ -74,5 +74,7 @@ protected:
 #endif
 
 public:
-	DigitalViewerRoot();
+	MainWindow();
 };
+
+} // namespace dw

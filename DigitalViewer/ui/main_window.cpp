@@ -1,10 +1,10 @@
 /**************************************************************************/
-/*  digital_viewer_root.cpp                                               */
+/*  main_window.cpp                                                       */
 /**************************************************************************/
 /*                         This is part of DigitalViewer fork app code.    */
 /**************************************************************************/
 
-#include "digital_viewer_root.h"
+#include "DigitalViewer/ui/main_window.h"
 
 #include "modules/modules_enabled.gen.h"
 
@@ -31,8 +31,10 @@
 #include "scene/main/viewport.h"
 #include "scene/resources/3d/world_3d.h"
 #include "scene/resources/environment.h"
+#include "scene/resources/font.h"
 #include "scene/resources/image_texture.h"
 #include "scene/resources/style_box_flat.h"
+#include "scene/resources/theme.h"
 
 #include "core/io/image.h"
 #include "scene/gui/subviewport_container.h"
@@ -74,6 +76,25 @@ static void _dv_label_on_light(Label *p_label, const Color &p_fg) {
 	p_label->add_theme_color_override(SceneStringName(font_color), p_fg);
 }
 
+static Ref<Theme> _dv_make_ui_theme() {
+	Ref<SystemFont> font;
+	font.instantiate();
+
+	PackedStringArray names;
+	names.push_back("Segoe UI");
+	names.push_back("DengXian");
+	names.push_back("Microsoft YaHei UI");
+	names.push_back("Microsoft YaHei");
+	font->set_font_names(names);
+	font->set_font_weight(400);
+	font->set_hinting(TextServer::HINTING_LIGHT);
+
+	Ref<Theme> theme;
+	theme.instantiate();
+	theme->set_default_font(font);
+	return theme;
+}
+
 #ifndef _3D_DISABLED
 static void _dv_accum_visual_aabb(Node *p_node, AABB &r_aabb, bool &r_first) {
 	VisualInstance3D *vi = Object::cast_to<VisualInstance3D>(p_node);
@@ -94,21 +115,23 @@ static void _dv_accum_visual_aabb(Node *p_node, AABB &r_aabb, bool &r_first) {
 }
 #endif
 
-void DigitalViewerRoot::_bind_methods() {
+namespace dw {
+
+void MainWindow::_bind_methods() {
 }
 
-void DigitalViewerRoot::_on_import_menu_id_pressed(int p_id) {
+void MainWindow::_on_import_menu_id_pressed(int p_id) {
 	if (p_id == MENU_IMPORT_GLTF && file_dialog) {
 		file_dialog->popup_centered_ratio(0.55);
 	}
 }
 
-void DigitalViewerRoot::_on_file_selected(const String &p_path) {
-	ERR_FAIL_NULL_MSG(status_label, "DigitalViewerRoot: status_label not built.");
+void MainWindow::_on_file_selected(const String &p_path) {
+	ERR_FAIL_NULL_MSG(status_label, "MainWindow: status_label not built.");
 
 #ifndef _3D_DISABLED
-	ERR_FAIL_NULL_MSG(model_holder, "DigitalViewerRoot: model_holder not built.");
-	ERR_FAIL_NULL_MSG(view_camera, "DigitalViewerRoot: view_camera not built.");
+	ERR_FAIL_NULL_MSG(model_holder, "MainWindow: model_holder not built.");
+	ERR_FAIL_NULL_MSG(view_camera, "MainWindow: view_camera not built.");
 #endif
 
 	if (status_label) {
@@ -154,7 +177,7 @@ void DigitalViewerRoot::_on_file_selected(const String &p_path) {
 }
 
 #ifndef _3D_DISABLED
-void DigitalViewerRoot::_clear_model_holder() {
+void MainWindow::_clear_model_holder() {
 	ERR_FAIL_NULL(model_holder);
 	while (model_holder->get_child_count() > 0) {
 		Node *c = model_holder->get_child(0);
@@ -163,7 +186,7 @@ void DigitalViewerRoot::_clear_model_holder() {
 	}
 }
 
-void DigitalViewerRoot::_frame_camera_to_contents() {
+void MainWindow::_frame_camera_to_contents() {
 	ERR_FAIL_NULL(view_camera);
 	ERR_FAIL_NULL(model_holder);
 
@@ -189,7 +212,7 @@ void DigitalViewerRoot::_frame_camera_to_contents() {
 }
 #endif
 
-void DigitalViewerRoot::_structure_tree_fill_branch(TreeItem *p_parent, Node *p_node) {
+void MainWindow::_structure_tree_fill_branch(TreeItem *p_parent, Node *p_node) {
 	ERR_FAIL_NULL(structure_tree);
 	ERR_FAIL_NULL(p_node);
 	TreeItem *item = structure_tree->create_item(p_parent);
@@ -201,7 +224,7 @@ void DigitalViewerRoot::_structure_tree_fill_branch(TreeItem *p_parent, Node *p_
 	}
 }
 
-void DigitalViewerRoot::_refresh_structure_tree() {
+void MainWindow::_refresh_structure_tree() {
 	ERR_FAIL_NULL(structure_tree);
 	structure_tree->clear();
 	structure_tree->set_hide_root(true);
@@ -227,7 +250,7 @@ void DigitalViewerRoot::_refresh_structure_tree() {
 	_update_properties_panel(nullptr);
 }
 
-void DigitalViewerRoot::_on_structure_tree_item_selected() {
+void MainWindow::_on_structure_tree_item_selected() {
 	if (!structure_tree) {
 		return;
 	}
@@ -251,7 +274,7 @@ void DigitalViewerRoot::_on_structure_tree_item_selected() {
 	_update_properties_panel(n);
 }
 
-void DigitalViewerRoot::_update_properties_panel(Node *p_node) {
+void MainWindow::_update_properties_panel(Node *p_node) {
 	if (!prop_name_label || !prop_class_label || !prop_path_label) {
 		return;
 	}
@@ -267,7 +290,7 @@ void DigitalViewerRoot::_update_properties_panel(Node *p_node) {
 	prop_path_label->set_text(String(p_node->get_path()));
 }
 
-void DigitalViewerRoot::_sync_title_merge_layout() {
+void MainWindow::_sync_title_merge_layout() {
 	if (!title_bar) {
 		return;
 	}
@@ -281,7 +304,7 @@ void DigitalViewerRoot::_sync_title_merge_layout() {
 	}
 }
 
-void DigitalViewerRoot::_process_title_bar_drag(const Ref<InputEvent> &p_event) {
+void MainWindow::_process_title_bar_drag(const Ref<InputEvent> &p_event) {
 	Window *w = get_window();
 	ERR_FAIL_NULL(w);
 
@@ -320,22 +343,22 @@ void DigitalViewerRoot::_process_title_bar_drag(const Ref<InputEvent> &p_event) 
 	}
 }
 
-void DigitalViewerRoot::_on_nonclient_title_input(const Ref<InputEvent> &p_event) {
+void MainWindow::_on_nonclient_title_input(const Ref<InputEvent> &p_event) {
 	_process_title_bar_drag(p_event);
 }
 
-void DigitalViewerRoot::_on_title_drag_region_gui_input(const Ref<InputEvent> &p_event) {
+void MainWindow::_on_title_drag_region_gui_input(const Ref<InputEvent> &p_event) {
 	_process_title_bar_drag(p_event);
 }
 
-void DigitalViewerRoot::_title_win_minimize() {
+void MainWindow::_title_win_minimize() {
 	Window *w = get_window();
 	if (w) {
 		w->set_mode(Window::MODE_MINIMIZED);
 	}
 }
 
-void DigitalViewerRoot::_title_win_toggle_maximize() {
+void MainWindow::_title_win_toggle_maximize() {
 	Window *w = get_window();
 	if (!w) {
 		return;
@@ -347,22 +370,22 @@ void DigitalViewerRoot::_title_win_toggle_maximize() {
 	}
 }
 
-void DigitalViewerRoot::_title_win_close() {
+void MainWindow::_title_win_close() {
 	if (get_tree()) {
 		get_tree()->quit();
 	}
 }
 
-void DigitalViewerRoot::_notification(int p_what) {
+void MainWindow::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 #ifdef MACOS_ENABLED
 			if (DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_EXTEND_TO_TITLE)) {
 				Window *rw = get_tree()->get_root();
 				if (rw) {
-					rw->connect(SNAME("nonclient_window_input"), callable_mp(this, &DigitalViewerRoot::_on_nonclient_title_input));
+					rw->connect(SNAME("nonclient_window_input"), callable_mp(this, &MainWindow::_on_nonclient_title_input));
 				}
-				callable_mp(this, &DigitalViewerRoot::_sync_title_merge_layout).call_deferred();
+				callable_mp(this, &MainWindow::_sync_title_merge_layout).call_deferred();
 			}
 #endif
 		} break;
@@ -372,7 +395,7 @@ void DigitalViewerRoot::_notification(int p_what) {
 			if (DisplayServer::get_singleton()->has_feature(DisplayServerEnums::FEATURE_EXTEND_TO_TITLE)) {
 				Window *rw = get_tree()->get_root();
 				if (rw) {
-					const Callable cb = callable_mp(this, &DigitalViewerRoot::_on_nonclient_title_input);
+					const Callable cb = callable_mp(this, &MainWindow::_on_nonclient_title_input);
 					if (rw->is_connected(SNAME("nonclient_window_input"), cb)) {
 						rw->disconnect(SNAME("nonclient_window_input"), cb);
 					}
@@ -391,6 +414,7 @@ void DigitalViewerRoot::_notification(int p_what) {
 
 		case NOTIFICATION_READY: {
 			set_anchors_preset(PRESET_FULL_RECT);
+			set_theme(_dv_make_ui_theme());
 
 			// IDE-style merged title strip (light) + rest of app (dark framed viewport).
 			const Color col_title_bg(0.88f, 0.88f, 0.88f, 1.0f);
@@ -429,7 +453,7 @@ void DigitalViewerRoot::_notification(int p_what) {
 			file_menu->add_theme_color_override("font_pressed_color", col_title_fg);
 			PopupMenu *popup = file_menu->get_popup();
 			popup->add_item(String::utf8(u8"导入GLTF"), MENU_IMPORT_GLTF);
-			popup->connect(SNAME("id_pressed"), callable_mp(this, &DigitalViewerRoot::_on_import_menu_id_pressed));
+			popup->connect(SNAME("id_pressed"), callable_mp(this, &MainWindow::_on_import_menu_id_pressed));
 
 			top_bar->add_child(dao_badge);
 			top_bar->add_child(file_menu);
@@ -459,7 +483,7 @@ void DigitalViewerRoot::_notification(int p_what) {
 			title_drag_region = memnew(Control);
 			title_drag_region->set_h_size_flags(SIZE_EXPAND_FILL);
 			title_drag_region->set_mouse_filter(MOUSE_FILTER_STOP);
-			title_drag_region->connect(SNAME("gui_input"), callable_mp(this, &DigitalViewerRoot::_on_title_drag_region_gui_input));
+			title_drag_region->connect(SNAME("gui_input"), callable_mp(this, &MainWindow::_on_title_drag_region_gui_input));
 			top_bar->add_child(title_drag_region);
 
 #ifdef WINDOWS_ENABLED
@@ -474,9 +498,9 @@ void DigitalViewerRoot::_notification(int p_what) {
 				b->connect(SNAME("pressed"), p_cb);
 				win_btns->add_child(b);
 			};
-			add_win_btn(String::utf8(u8"\u2014"), callable_mp(this, &DigitalViewerRoot::_title_win_minimize));
-			add_win_btn(String::utf8(u8"\u25A1"), callable_mp(this, &DigitalViewerRoot::_title_win_toggle_maximize));
-			add_win_btn(String::utf8(u8"\u2715"), callable_mp(this, &DigitalViewerRoot::_title_win_close));
+			add_win_btn(String::utf8(u8"\u2014"), callable_mp(this, &MainWindow::_title_win_minimize));
+			add_win_btn(String::utf8(u8"\u25A1"), callable_mp(this, &MainWindow::_title_win_toggle_maximize));
+			add_win_btn(String::utf8(u8"\u2715"), callable_mp(this, &MainWindow::_title_win_close));
 			top_bar->add_child(win_btns);
 #endif
 
@@ -524,7 +548,7 @@ void DigitalViewerRoot::_notification(int p_what) {
 			structure_tree->set_h_size_flags(SIZE_EXPAND_FILL);
 			structure_tree->set_v_size_flags(SIZE_EXPAND_FILL);
 			structure_tree->set_columns(1);
-			structure_tree->connect(SNAME("item_selected"), callable_mp(this, &DigitalViewerRoot::_on_structure_tree_item_selected));
+			structure_tree->connect(SNAME("item_selected"), callable_mp(this, &MainWindow::_on_structure_tree_item_selected));
 			left_tree_margin->add_child(structure_tree);
 			left_tabs->add_child(left_tree_margin);
 			left_dock->add_child(left_tabs);
@@ -656,13 +680,13 @@ void DigitalViewerRoot::_notification(int p_what) {
 			file_dialog->clear_filters();
 			file_dialog->add_filter("*.gltf", "glTF");
 			file_dialog->add_filter("*.glb", "glTF Binary");
-			file_dialog->connect(SNAME("file_selected"), callable_mp(this, &DigitalViewerRoot::_on_file_selected));
+			file_dialog->connect(SNAME("file_selected"), callable_mp(this, &MainWindow::_on_file_selected));
 			file_dialog->set_force_native(true);
 			add_child(file_dialog);
 
 			_refresh_structure_tree();
 
-			callable_mp(this, &DigitalViewerRoot::_sync_title_merge_layout).call_deferred();
+			callable_mp(this, &MainWindow::_sync_title_merge_layout).call_deferred();
 		} break;
 
 		default: {
@@ -671,4 +695,6 @@ void DigitalViewerRoot::_notification(int p_what) {
 	}
 }
 
-DigitalViewerRoot::DigitalViewerRoot() = default;
+MainWindow::MainWindow() = default;
+
+} // namespace dw

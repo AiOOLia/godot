@@ -5,5 +5,9 @@
 /**************************************************************************/
 #pragma once
 
+namespace dw {
+
 void register_digital_viewer_types();
 void unregister_digital_viewer_types();
+
+} // namespace dw

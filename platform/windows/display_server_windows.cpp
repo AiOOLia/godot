@@ -1489,6 +1489,10 @@ int DisplayServerWindows::screen_get_dpi(int p_screen) const {
 	return data.dpi;
 }
 
+float DisplayServerWindows::screen_get_scale(int p_screen) const {
+	return (float)screen_get_dpi(p_screen) / 96.0f;
+}
+
 Color DisplayServerWindows::screen_get_pixel(const Point2i &p_position) const {
 	Point2i pos = p_position + _get_screens_origin();
 

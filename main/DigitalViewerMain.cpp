@@ -87,8 +87,12 @@
 #include "modules/register_module_types.h"
 #include "platform/register_platform_apis.h"
 
-#include "DigitalViewer/digital_viewer_root.h"
+#include "DigitalViewer/ui/main_window.h"
 #include "DigitalViewer/register_digital_viewer_types.h"
+
+#ifdef WINDOWS_ENABLED
+#include "DigitalViewer/platform/windows/dv_win_decorations.h"
+#endif
 
 // 2D
 #ifndef NAVIGATION_2D_DISABLED
@@ -737,7 +741,7 @@ void Main::test_cleanup() {
 	GDExtensionManager::get_singleton()->deinitialize_extensions(GDExtension::INITIALIZATION_LEVEL_SCENE);
 	uninitialize_modules(MODULE_INITIALIZATION_LEVEL_SCENE);
 
-	unregister_digital_viewer_types();
+	dw::unregister_digital_viewer_types();
 
 	unregister_platform_apis();
 	unregister_driver_types();
@@ -2475,7 +2479,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 		} else {
 			// DigitalViewer: merge menu strip with caption like desktop IDE shells.
 			// - macOS: native transparent title + traffic lights (DisplayServer implements EXTEND_TO_TITLE).
-			// - Windows: no EXTEND_TO_TITLE support — use borderless window + in-app caption / drag region (see DigitalViewerRoot).
+			// - Windows: no EXTEND_TO_TITLE support — use borderless window + in-app caption / drag region (see dw::MainWindow).
 #ifdef MACOS_ENABLED
 			window_flags |= DisplayServerEnums::WINDOW_FLAG_EXTEND_TO_TITLE_BIT;
 #endif
@@ -2592,6 +2596,10 @@ Error Main::setup2(bool p_show_boot_logo) {
 		}
 
 		OS::get_singleton()->benchmark_end_measure("Servers", "Display");
+
+#ifdef WINDOWS_ENABLED
+		dv_windows_apply_main_window_decorations();
+#endif
 	}
 
 	// Max FPS needs to be set after the DisplayServer is created.
@@ -2917,7 +2925,7 @@ Error Main::setup2(bool p_show_boot_logo) {
 
 	register_platform_apis();
 
-	register_digital_viewer_types();
+	dw::register_digital_viewer_types();
 
 	OS::get_singleton()->benchmark_end_measure("Startup", "Platforms");
 
@@ -3536,8 +3544,8 @@ int Main::start() {
 					}
 				}
 			} else {
-				DigitalViewerRoot *dv_root = memnew(DigitalViewerRoot);
-				sml->add_current_scene(dv_root);
+				dw::MainWindow *main_window = memnew(dw::MainWindow);
+				sml->add_current_scene(main_window);
 			}
 
 			OS::get_singleton()->benchmark_end_measure("Startup", "Load Game");
@@ -3975,7 +3983,7 @@ void Main::cleanup(bool p_force) {
 	GDExtensionManager::get_singleton()->deinitialize_extensions(GDExtension::INITIALIZATION_LEVEL_SCENE);
 	uninitialize_modules(MODULE_INITIALIZATION_LEVEL_SCENE);
 
-	unregister_digital_viewer_types();
+	dw::unregister_digital_viewer_types();
 
 	unregister_platform_apis();
 	unregister_driver_types();

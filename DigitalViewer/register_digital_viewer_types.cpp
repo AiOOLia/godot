@@ -6,13 +6,17 @@
 
 #include "register_digital_viewer_types.h"
 
-#include "digital_viewer_root.h"
+#include "DigitalViewer/ui/main_window.h"
 
 #include "core/object/class_db.h"
 
+namespace dw {
+
 void register_digital_viewer_types() {
-	GDREGISTER_CLASS(DigitalViewerRoot);
+	GDREGISTER_CLASS(MainWindow);
 }
 
 void unregister_digital_viewer_types() {
 }
+
+} // namespace dw
