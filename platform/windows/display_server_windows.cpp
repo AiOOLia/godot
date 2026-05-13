@@ -2555,6 +2555,9 @@ void DisplayServerWindows::_get_window_style(bool p_main_window, bool p_initiali
 		}
 		if (!p_fullscreen) {
 			r_style |= WS_SYSMENU;
+			if (p_borderless && p_resizable) {
+				r_style |= WS_THICKFRAME;
+			}
 			if (!p_no_min_btn) {
 				r_style |= WS_MINIMIZEBOX;
 			}
@@ -5376,6 +5379,65 @@ LRESULT DisplayServerWindows::_handle_early_window_message(HWND hWnd, UINT uMsg,
 	return DefWindowProcW(hWnd, uMsg, wParam, lParam);
 }
 
+namespace {
+
+LRESULT hit_test_borderless_resize_frame(HWND p_hwnd, LPARAM p_lparam) {
+	if (IsIconic(p_hwnd) || IsZoomed(p_hwnd)) {
+		return HTCLIENT;
+	}
+
+	POINT pt = { GET_X_LPARAM(p_lparam), GET_Y_LPARAM(p_lparam) };
+	RECT wr = {};
+	if (!GetWindowRect(p_hwnd, &wr) || !PtInRect(&wr, pt)) {
+		return HTCLIENT;
+	}
+
+	const LONG width = wr.right - wr.left;
+	const LONG height = wr.bottom - wr.top;
+	if (width <= 1 || height <= 1) {
+		return HTCLIENT;
+	}
+
+	const LONG edge_x = MIN(4L, MAX(width / 8, 1L));
+	const LONG edge_y = MIN(4L, MAX(height / 8, 1L));
+
+	const LONG x = pt.x - wr.left;
+	const LONG y = pt.y - wr.top;
+	const bool left = x < edge_x;
+	const bool right = x >= width - edge_x;
+	const bool top = y < edge_y;
+	const bool bottom = y >= height - edge_y;
+
+	if (top && left) {
+		return HTTOPLEFT;
+	}
+	if (top && right) {
+		return HTTOPRIGHT;
+	}
+	if (bottom && left) {
+		return HTBOTTOMLEFT;
+	}
+	if (bottom && right) {
+		return HTBOTTOMRIGHT;
+	}
+	if (left) {
+		return HTLEFT;
+	}
+	if (right) {
+		return HTRIGHT;
+	}
+	if (top) {
+		return HTTOP;
+	}
+	if (bottom) {
+		return HTBOTTOM;
+	}
+
+	return HTCLIENT;
+}
+
+} // anonymous namespace
+
 // The window procedure for our window class "Engine", used to handle processing of window-related system messages/events.
 // See: https://docs.microsoft.com/en-us/windows/win32/winmsg/window-procedures
 LRESULT DisplayServerWindows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
@@ -5429,9 +5491,18 @@ LRESULT DisplayServerWindows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
 				SendMessageW(windows[window_id].hWnd, WM_PAINT, 0, 0);
 			}
 		} break;
+		case WM_NCCALCSIZE: {
+			// Keep WS_THICKFRAME for native resizing, but let borderless windows draw into the frame.
+			if (wParam && windows[window_id].borderless && windows[window_id].resizable && !windows[window_id].fullscreen) {
+				return 0;
+			}
+		} break;
 		case WM_NCHITTEST: {
 			if (windows[window_id].mpass) {
 				return HTTRANSPARENT;
+			}
+			if (windows[window_id].borderless && windows[window_id].resizable && !windows[window_id].fullscreen) {
+				return hit_test_borderless_resize_frame(hWnd, lParam);
 			}
 		} break;
 		case WM_MOUSEACTIVATE: {
