@@ -1,13 +1,28 @@
 #!/usr/bin/env python
 from misc.utility.scons_hints import *
 
+import sys
+
 Import("env")
 
+sys.path.insert(0, Dir("#editor/themes").abspath)
+import editor_theme_builders
+
 env_digital = env.Clone()
+digital_font_sources = [
+    "#thirdparty/fonts/Inter_Regular.woff2",
+    "#thirdparty/fonts/DroidSansFallback.woff2",
+]
+digital_font_header = env_digital.CommandNoCache(
+    "#DigitalViewer/builtin_fonts.gen.h",
+    digital_font_sources,
+    env_digital.Run(editor_theme_builders.make_fonts_header),
+)
 env_digital_sources = []
 env_digital.add_source_files(env_digital_sources, "*.cpp")
 env_digital.add_source_files(env_digital_sources, "ui/*.cpp")
 if env_digital["platform"] == "windows":
     env_digital.add_source_files(env_digital_sources, "platform/windows/*.cpp")
+env_digital.Depends(env_digital_sources, digital_font_header)
 lib = env_digital.add_library("digital_viewer_app", env_digital_sources)
 env.Append(LIBS=[lib])

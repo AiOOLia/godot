@@ -3394,16 +3394,6 @@ int Main::start() {
 			real_t stretch_scale = GLOBAL_GET("display/window/stretch/scale");
 			String stretch_scale_mode = GLOBAL_GET("display/window/stretch/scale_mode");
 
-			// With stretch "disabled", the root viewport uses window pixels; theme font sizes do not grow when
-			// maximizing (only layout gains area). Scale by monitor DPI so glyphs match system text scaling.
-			if (stretch_mode == "disabled" && OS::get_singleton()->is_hidpi_allowed()) {
-				const int screen = DisplayServer::get_singleton()->window_get_current_screen(DisplayServerEnums::MAIN_WINDOW_ID);
-				const float mon_scale = DisplayServer::get_singleton()->screen_get_scale(screen);
-				if (mon_scale > 1.0f) {
-					stretch_scale *= 1 + (mon_scale - 1) * 0.5f;
-				}
-			}
-
 			Window::ContentScaleMode cs_sm = Window::CONTENT_SCALE_MODE_DISABLED;
 			if (stretch_mode == "canvas_items") {
 				cs_sm = Window::CONTENT_SCALE_MODE_CANVAS_ITEMS;

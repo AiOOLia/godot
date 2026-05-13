@@ -6,6 +6,8 @@
 
 #include "DigitalViewer/ui/main_window.h"
 
+#include "DigitalViewer/builtin_fonts.gen.h"
+
 #include "modules/modules_enabled.gen.h"
 
 #include "core/math/math_defs.h"
@@ -37,6 +39,7 @@
 #include "scene/resources/theme.h"
 
 #include "core/io/image.h"
+#include "core/io/image_loader.h"
 #include "scene/gui/subviewport_container.h"
 #include "scene/gui/button.h"
 #include "scene/main/scene_tree.h"
@@ -58,12 +61,76 @@ static Ref<StyleBoxFlat> _dv_style_bg(const Color &p_color) {
 	return s;
 }
 
-static Ref<ImageTexture> _dv_transparent_grabber_icon() {
+
+static Ref<ImageTexture> _dv_split_grabber_icon() {
 	Ref<Image> img;
 	img.instantiate();
-	img->initialize_data(1, 1, false, Image::FORMAT_RGBA8);
-	img->fill(Color(0, 0, 0, 0));
+	if (ImageLoader::load_image("res://icons/GuiHsplitter.svg", img) != OK) {
+		img->initialize_data(2, 64, false, Image::FORMAT_RGBA8);
+		img->fill(Color(0, 0, 0, 0));
+		for (int y = 2; y < 62; y++) {
+			img->set_pixel(0, y, Color(1, 1, 1, 0.4f));
+			img->set_pixel(1, y, Color(1, 1, 1, 0.4f));
+		}
+	}
 	return ImageTexture::create_from_image(img);
+}
+
+static Ref<FontFile> _dv_load_internal_font(const uint8_t *p_data, size_t p_size, TypedArray<Font> *r_fallbacks = nullptr) {
+	Ref<FontFile> font;
+	font.instantiate();
+	font->set_data_ptr(p_data, p_size);
+	font->set_antialiasing(TextServer::FONT_ANTIALIASING_GRAY);
+	font->set_hinting(TextServer::HINTING_LIGHT);
+	font->set_force_autohinter(true);
+	font->set_subpixel_positioning(TextServer::SUBPIXEL_POSITIONING_AUTO);
+	font->set_disable_embedded_bitmaps(true);
+	if (r_fallbacks) {
+		r_fallbacks->push_back(font);
+	}
+	return font;
+}
+
+static float _dv_get_editor_auto_display_scale() {
+	DisplayServer *ds = DisplayServer::get_singleton();
+	ERR_FAIL_NULL_V(ds, 1.0f);
+
+#if defined(MACOS_ENABLED) || defined(ANDROID_ENABLED)
+	return ds->screen_get_max_scale();
+#else
+	const int screen = ds->window_get_current_screen();
+	if (ds->screen_get_size(screen) == Vector2i()) {
+		return 1.0f;
+	}
+
+#if defined(WINDOWS_ENABLED)
+	return ds->screen_get_dpi(screen) / 96.0f;
+#else
+	const int smallest_dimension = MIN(ds->screen_get_size(screen).x, ds->screen_get_size(screen).y);
+	if (ds->screen_get_dpi(screen) >= 192 && smallest_dimension >= 1400) {
+		return 2.0f;
+	} else if (smallest_dimension >= 1700) {
+		return 1.5f;
+	} else if (smallest_dimension <= 800) {
+		return 0.75f;
+	}
+	return 1.0f;
+#endif
+#endif
+}
+
+static Ref<Theme> _dv_make_editor_like_theme() {
+	TypedArray<Font> fallbacks;
+	_dv_load_internal_font(_font_DroidSansFallback, _font_DroidSansFallback_size, &fallbacks);
+	Ref<FontFile> main_font = _dv_load_internal_font(_font_Inter_Regular, _font_Inter_Regular_size);
+	main_font->set_fallbacks(fallbacks);
+
+	Ref<Theme> theme;
+	theme.instantiate();
+	theme->set_default_font(main_font);
+	const int default_font_size = MAX(1, (int)(14 * _dv_get_editor_auto_display_scale()));
+	theme->set_default_font_size(default_font_size);
+	return theme;
 }
 
 static void _dv_label_on_dark(Label *p_label) {
@@ -74,25 +141,6 @@ static void _dv_label_on_dark(Label *p_label) {
 static void _dv_label_on_light(Label *p_label, const Color &p_fg) {
 	ERR_FAIL_NULL(p_label);
 	p_label->add_theme_color_override(SceneStringName(font_color), p_fg);
-}
-
-static Ref<Theme> _dv_make_ui_theme() {
-	Ref<SystemFont> font;
-	font.instantiate();
-
-	PackedStringArray names;
-	names.push_back("Segoe UI");
-	names.push_back("DengXian");
-	names.push_back("Microsoft YaHei UI");
-	names.push_back("Microsoft YaHei");
-	font->set_font_names(names);
-	font->set_font_weight(400);
-	font->set_hinting(TextServer::HINTING_LIGHT);
-
-	Ref<Theme> theme;
-	theme.instantiate();
-	theme->set_default_font(font);
-	return theme;
 }
 
 #ifndef _3D_DISABLED
@@ -414,11 +462,11 @@ void MainWindow::_notification(int p_what) {
 
 		case NOTIFICATION_READY: {
 			set_anchors_preset(PRESET_FULL_RECT);
-			set_theme(_dv_make_ui_theme());
+			set_theme(_dv_make_editor_like_theme());
 
-			// IDE-style merged title strip (light) + rest of app (dark framed viewport).
-			const Color col_title_bg(0.88f, 0.88f, 0.88f, 1.0f);
-			const Color col_title_fg(0.14f, 0.14f, 0.14f, 1.0f);
+			// IDE-style merged title strip + rest of app (dark framed viewport).
+			const Color col_title_bg(0.08f, 0.08f, 0.085f, 1.0f);
+			const Color col_title_fg(1.0f, 1.0f, 1.0f, 0.75f);
 			const Color col_bar(0.302f, 0.302f, 0.302f, 1.0f);
 			const Color col_viewport_frame(0.80f, 1.0f, 0.55f, 1.0f);
 			const Color col_margin(0.22f, 0.22f, 0.22f, 1.0f);
@@ -429,7 +477,7 @@ void MainWindow::_notification(int p_what) {
 			add_child(root_col);
 
 			title_bar = memnew(PanelContainer);
-			title_bar->set_custom_minimum_size(Size2(0, 40));
+			title_bar->set_custom_minimum_size(Size2(0, 34));
 			title_bar->add_theme_style_override("panel", _dv_style_bg(col_title_bg));
 
 			HBoxContainer *top_bar = memnew(HBoxContainer);
@@ -437,7 +485,7 @@ void MainWindow::_notification(int p_what) {
 
 			PanelContainer *dao_badge = memnew(PanelContainer);
 			dao_badge->set_custom_minimum_size(Size2(36, 28));
-			dao_badge->add_theme_style_override("panel", _dv_style_bg(Color(0.18f, 0.18f, 0.20f, 1.0f)));
+			dao_badge->add_theme_style_override("panel", _dv_style_bg(Color(0.12f, 0.12f, 0.135f, 1.0f)));
 			Label *dao_lbl = memnew(Label);
 			dao_lbl->set_text(String::utf8(u8"DAO"));
 			dao_lbl->set_horizontal_alignment(HORIZONTAL_ALIGNMENT_CENTER);
@@ -447,7 +495,7 @@ void MainWindow::_notification(int p_what) {
 
 			MenuButton *file_menu = memnew(MenuButton);
 			file_menu->set_text(String::utf8(u8"文件(F)"));
-			file_menu->set_flat(false);
+			file_menu->set_flat(true);
 			file_menu->add_theme_color_override(SceneStringName(font_color), col_title_fg);
 			file_menu->add_theme_color_override("font_hover_color", col_title_fg);
 			file_menu->add_theme_color_override("font_pressed_color", col_title_fg);
@@ -492,13 +540,13 @@ void MainWindow::_notification(int p_what) {
 				Button *b = memnew(Button);
 				b->set_flat(true);
 				b->set_text(p_text);
-				b->set_custom_minimum_size(Size2(46, 32));
+				b->set_custom_minimum_size(Size2(40, 28));
 				b->add_theme_color_override(SceneStringName(font_color), col_title_fg);
 				//b->add_theme_font_size_override(SceneStringName(font_size), 6);
 				b->connect(SNAME("pressed"), p_cb);
 				win_btns->add_child(b);
 			};
-			add_win_btn(String::utf8(u8"\u2014"), callable_mp(this, &MainWindow::_title_win_minimize));
+			add_win_btn(String::utf8(u8"—"), callable_mp(this, &MainWindow::_title_win_minimize));
 			add_win_btn(String::utf8(u8"\u25A1"), callable_mp(this, &MainWindow::_title_win_toggle_maximize));
 			add_win_btn(String::utf8(u8"\u2715"), callable_mp(this, &MainWindow::_title_win_close));
 			top_bar->add_child(win_btns);
@@ -512,18 +560,13 @@ void MainWindow::_notification(int p_what) {
 			body->add_theme_style_override("panel", _dv_style_bg(col_margin));
 
 			const Color col_dock_bg(0.14f, 0.14f, 0.145f, 1.0f);
-			const Color col_split_bar(0.26f, 0.26f, 0.29f, 1.0f);
-			const Color col_split_hover(0.48f, 0.68f, 0.98f, 0.42f);
-			Ref<ImageTexture> split_grabber_icon = _dv_transparent_grabber_icon();
-			Ref<StyleBoxFlat> split_bar_style = _dv_style_bg(col_split_bar);
+			Ref<ImageTexture> split_grabber_icon = _dv_split_grabber_icon();
 			auto configure_hsplit_strip = [&](HSplitContainer *p_split) {
 				p_split->set_dragger_visibility(SplitContainer::DRAGGER_VISIBLE);
 				p_split->add_theme_constant_override("separation", 3);
-				p_split->add_theme_constant_override("autohide", 0);
+				p_split->add_theme_constant_override("autohide", 1);
 				p_split->add_theme_constant_override("minimum_grab_thickness", 6);
 				p_split->add_theme_icon_override(SNAME("grabber"), split_grabber_icon);
-				p_split->add_theme_style_override("split_bar_background", split_bar_style);
-				p_split->add_theme_color_override("hover_highlight", col_split_hover);
 			};
 
 			HSplitContainer *main_hsplit = memnew(HSplitContainer);
