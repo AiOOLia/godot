@@ -1,7 +1,17 @@
 #!/usr/bin/env python
 from misc.utility.scons_hints import *
 
+import os
+import shutil
 import sys
+
+
+def copy_digital_viewer_asset(target, source, env):
+    target_path = str(target[0])
+    source_path = str(source[0])
+    os.makedirs(os.path.dirname(target_path), exist_ok=True)
+    shutil.copyfile(source_path, target_path)
+
 
 Import("env")
 
@@ -24,5 +34,51 @@ env_digital.add_source_files(env_digital_sources, "ui/*.cpp")
 if env_digital["platform"] == "windows":
     env_digital.add_source_files(env_digital_sources, "platform/windows/*.cpp")
 env_digital.Depends(env_digital_sources, digital_font_header)
+
+digital_runtime_assets = []
+for icon in Glob("#DigitalViewer/icons/*.svg"):
+    digital_runtime_assets.append(
+        env_digital.CommandNoCache(
+            "#bin/icons/" + os.path.basename(str(icon)),
+            icon,
+            env_digital.Run(copy_digital_viewer_asset),
+        )
+    )
+cesium_addon_root = Dir("#DigitalViewer/extensions/3D-Tiles-For-Godot/godot3dtiles/addons/cesium_godot").abspath
+if os.path.isdir(cesium_addon_root):
+    for root, _dirs, files in os.walk(cesium_addon_root):
+        for filename in files:
+            source_path = os.path.join(root, filename)
+            relative_path = os.path.relpath(source_path, cesium_addon_root).replace(os.sep, "/")
+            digital_runtime_assets.append(
+                env_digital.CommandNoCache(
+                    "#bin/addons/cesium_godot/" + relative_path,
+                    source_path,
+                    env_digital.Run(copy_digital_viewer_asset),
+                )
+            )
+cesium_bin_root = Dir("#DigitalViewer/extensions/3D-Tiles-For-Godot/godot3dtiles/bin").abspath
+if os.path.isdir(cesium_bin_root):
+    for filename in os.listdir(cesium_bin_root):
+        if filename.lower().endswith((".dll", ".so", ".dylib")):
+            digital_runtime_assets.append(
+                env_digital.CommandNoCache(
+                    "#bin/addons/cesium_godot/lib/" + filename,
+                    os.path.join(cesium_bin_root, filename),
+                    env_digital.Run(copy_digital_viewer_asset),
+                )
+            )
+digital_view_extension_root = Dir("#DigitalViewer/extensions/DigitalView").abspath
+if os.path.isdir(digital_view_extension_root):
+    for filename in os.listdir(digital_view_extension_root):
+        if filename.endswith(".gdextension") or filename.lower().endswith((".dll", ".so", ".dylib")):
+            digital_runtime_assets.append(
+                env_digital.CommandNoCache(
+                    "#bin/" + filename,
+                    os.path.join(digital_view_extension_root, filename),
+                    env_digital.Run(copy_digital_viewer_asset),
+                )
+            )
 lib = env_digital.add_library("digital_viewer_app", env_digital_sources)
+env_digital.Depends(lib, digital_runtime_assets)
 env.Append(LIBS=[lib])

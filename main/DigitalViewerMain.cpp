@@ -43,6 +43,7 @@
 #include "core/input/input.h"
 #include "core/input/input_map.h"
 #include "core/io/dir_access.h"
+#include "core/io/file_access.h"
 #include "core/io/file_access_pack.h"
 #include "core/io/file_access_zip.h"
 #include "core/io/image.h"
