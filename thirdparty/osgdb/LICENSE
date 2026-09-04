@@ -1,0 +1,9 @@
+OpenSceneGraph Public License (OSGPL) version 0.0
+
+This directory contains source files from OpenSceneGraph and osgDB. The
+upstream license text is maintained by the OpenSceneGraph project at:
+
+https://openscenegraph.github.io/OpenSceneGraphDotCom/files/osgpubliclicense.html
+
+Each extracted source file retains its original copyright and license notice.
+Godot-specific bridge and build files are distributed under Godot's license.

@@ -1,0 +1,54 @@
+#!/usr/bin/env python
+from misc.utility.scons_hints import *
+
+Import("env")
+Import("env_modules")
+
+env_osgdb = env_modules.Clone()
+
+# Third-party OSG/osgDB parser. Keep it in a warning-disabled environment and
+# compile it statically; no prebuilt file under thirdparty/osgdb is a build
+# input. LibraryWrapper.cpp and osg_static_init.cpp make the serializer and
+# reader registrations reachable when this module is linked from an archive.
+thirdparty_obj = []
+thirdparty_dir = "#thirdparty/osgdb/"
+
+env_osgdb.Prepend(CPPPATH=[thirdparty_dir + "include", "#thirdparty/zlib"])
+env_osgdb.Append(CPPDEFINES=["OSG_LIBRARY_STATIC", "OSGDB_LIBRARY_STATIC", "USE_ZLIB"])
+if env["tests"]:
+    # Module test headers are compiled as part of tests/test_main.cpp rather
+    # than with env_osgdb, so expose the OSG public include directory. Static
+    # ABI defines live in the module test header to avoid changing the compile
+    # signature of every source that shares the main environment.
+    env.Prepend(CPPPATH=[thirdparty_dir + "include"])
+
+env_thirdparty = env_osgdb.Clone()
+env_thirdparty.disable_warnings()
+env_thirdparty.Append(
+    CPPDEFINES=[
+        "OSG_USE_UTF8_FILENAME",
+    ]
+)
+
+osg_sources = [source for source in Glob(thirdparty_dir + "src/osg/*.cpp") if not str(source).endswith("Matrix_implementation.cpp")]
+osg_sources += Glob(thirdparty_dir + "src/osg/glu/libutil/*.cpp")
+osg_sources += [source for source in Glob(thirdparty_dir + "src/osg/glu/libtess/*.cpp") if not str(source).endswith("priorityq-heap.cpp")]
+
+osgdb_sources = Glob(thirdparty_dir + "src/osgDB/*.cpp")
+osgdb_sources += Glob(thirdparty_dir + "src/osgDB/serializers/osg/*.cpp")
+osgdb_sources += Glob(thirdparty_dir + "src/osgDB/readerwriters/osg/*.cpp")
+
+env_thirdparty.add_source_files(thirdparty_obj, osg_sources + osgdb_sources)
+env.modules_sources += thirdparty_obj
+
+# Godot integration sources.
+module_obj = []
+env_osgdb.add_source_files(module_obj, "*.cpp")
+
+if env.editor_build:
+    env_osgdb.add_source_files(module_obj, "editor/*.cpp")
+
+env.modules_sources += module_obj
+
+# Rebuild integration objects whenever the embedded parser changes.
+env.Depends(module_obj, thirdparty_obj)

@@ -920,6 +920,22 @@ Additional:
 - Update `openxrLoaderVersion` in `platform/android/java/app/config.gradle`
 
 
+## osgdb
+
+- Upstream: https://github.com/openscenegraph/OpenSceneGraph
+- Version: 3.7.x source snapshot (trimmed for Godot osg/osgb parsing)
+- License: OpenSceneGraph Public License (OSGPL) 0.0
+
+Files extracted from upstream source:
+
+- `include/osg/` and `src/osg/` scene graph sources
+- `include/osgDB/`, `src/osgDB/`, serializers and osg/osg2 readers
+- `LICENSE`
+
+Godot builds this snapshot from source as a static parser. Prebuilt binaries
+under this directory are intentionally excluded from the build.
+
+
 ## pcre2
 
 - Upstream: http://www.pcre.org

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="TiledOriginController3D" inherits="Node3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Maintains floating-origin precision for streamed GIS scenes.
+	</brief_description>
+	<description>
+		When the configured camera moves beyond the threshold at runtime, the managed world root is rebased and registered [TiledMeshInstance3D] nodes advance their double-precision source origin. The controller does not rebase editor scenes.
+	</description>
+	<members>
+		<member name="enabled" type="bool" setter="set_enabled" getter="is_enabled" default="true" />
+		<member name="camera_path" type="NodePath" setter="set_camera_path" getter="get_camera_path" default="NodePath(&quot;&quot;)" />
+		<member name="managed_world_root" type="NodePath" setter="set_managed_world_root" getter="get_managed_world_root" default="NodePath(&quot;&quot;)" />
+		<member name="rebase_threshold_m" type="float" setter="set_rebase_threshold_m" getter="get_rebase_threshold_m" default="10000.0" />
+	</members>
+	<signals>
+		<signal name="origin_shifted"><param index="0" name="delta" type="Vector3" /><param index="1" name="new_origin" type="PackedFloat64Array" /></signal>
+	</signals>
+</class>

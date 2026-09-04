@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="TiledMeshInstance3D" inherits="VisualInstance3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Streams OpenSceneGraph [code].osg[/code] and [code].osgb[/code] tiles into a 3D world.
+	</brief_description>
+	<description>
+		Loads an OSG scene asynchronously, converts supported triangle geometry to Godot meshes, and follows PagedLOD and ProxyNode references as the camera moves. Generated resources remain in memory and are not saved into the scene.
+		Local files, [code]res://[/code], [code]user://[/code], and HTTP(S) sources are supported. OSG parsing runs on a serial worker while rendering resources are created on the main thread.
+		External tiles are requested only while their authored LOD range is active. Eligible tiles are prioritized throughout data loading, parsing, and upload by their visible screen coverage and position within the active LOD interval; no speculative LOD preloading is performed.
+	</description>
+	<methods>
+		<method name="close">
+			<return type="void" />
+			<description>
+				Cancels pending work and releases all generated rendering resources.
+			</description>
+		</method>
+		<method name="get_dataset_aabb" qualifiers="const">
+			<return type="AABB" />
+			<description>
+				Returns the stable local-space bounds of the root dataset.
+			</description>
+		</method>
+		<method name="get_resident_aabb" qualifiers="const">
+			<return type="AABB" />
+			<description>
+				Returns the combined local-space bounds of resident geometry.
+			</description>
+		</method>
+		<method name="get_streaming_stats" qualifiers="const">
+			<return type="Dictionary" />
+			<description>
+				Returns current request, residency, visibility, texture, and memory statistics.
+			</description>
+		</method>
+		<method name="is_open" qualifiers="const">
+			<return type="bool" />
+		</method>
+		<method name="is_streaming_paused" qualifiers="const">
+			<return type="bool" />
+		</method>
+		<method name="local_to_world" qualifiers="const">
+			<return type="PackedFloat64Array" />
+			<param index="0" name="local_position" type="Vector3" />
+			<description>
+				Converts a Godot-local position to three double-precision source coordinates.
+			</description>
+		</method>
+		<method name="open">
+			<return type="int" enum="Error" />
+			<description>
+				Starts asynchronous loading of [member source_uri]. Returns an [enum Error] code.
+			</description>
+		</method>
+		<method name="reload">
+			<return type="int" enum="Error" />
+			<description>
+				Closes and opens the current source again. Returns an [enum Error] code.
+			</description>
+		</method>
+		<method name="set_streaming_paused">
+			<return type="void" />
+			<param index="0" name="paused" type="bool" />
+			<description>
+				Pauses new streaming and uploads without unloading resident geometry.
+			</description>
+		</method>
+		<method name="set_world_origin">
+			<return type="void" />
+			<param index="0" name="x" type="float" />
+			<param index="1" name="y" type="float" />
+			<param index="2" name="z" type="float" />
+			<description>
+				Sets the double-precision source origin used to place tile-local geometry.
+			</description>
+		</method>
+		<method name="world_to_local" qualifiers="const">
+			<return type="Vector3" />
+			<param index="0" name="x" type="float" />
+			<param index="1" name="y" type="float" />
+			<param index="2" name="z" type="float" />
+			<description>
+				Converts double-precision source coordinates to a Godot-local position.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="auto_load" type="bool" setter="set_auto_load" getter="is_auto_load_enabled" default="true">Starts loading automatically after entering the scene tree.</member>
+		<member name="axis_mode" type="int" setter="set_axis_mode" getter="get_axis_mode" enum="TiledMeshInstance3D.AxisMode" default="0">Source-to-Godot axis conversion.</member>
+		<member name="camera_path" type="NodePath" setter="set_camera_path" getter="get_camera_path" default="NodePath(&quot;&quot;)">Runtime streaming camera. The viewport camera is used when empty.</member>
+		<member name="cast_shadow" type="int" setter="set_cast_shadow" getter="get_cast_shadow" enum="GeometryInstance3D.ShadowCastingSetting" default="1">Shadow mode applied to generated tile instances.</member>
+		<member name="editor_preview_enabled" type="bool" setter="set_editor_preview_enabled" getter="is_editor_preview_enabled" default="true">Enables streaming in 3D editor viewports.</member>
+		<member name="editor_preview_lod_bias" type="float" setter="set_editor_preview_lod_bias" getter="get_editor_preview_lod_bias" default="0.5">LOD bias used by editor preview cameras.</member>
+		<member name="editor_preview_max_requests" type="int" setter="set_editor_preview_max_requests" getter="get_editor_preview_max_requests" default="4">Maximum concurrent editor preview requests.</member>
+		<member name="editor_preview_memory_mb" type="int" setter="set_editor_preview_memory_mb" getter="get_editor_preview_memory_mb" default="256">Editor preview memory budget in MiB.</member>
+		<member name="editor_preview_show_bounds" type="bool" setter="set_editor_preview_show_bounds" getter="is_editor_preview_showing_bounds" default="false">Shows dataset bounds while the node is not selected.</member>
+		<member name="lod_bias" type="float" setter="set_lod_bias" getter="get_lod_bias" default="1.0">Scales runtime LOD selection.</member>
+		<member name="lod_hysteresis" type="float" setter="set_lod_hysteresis" getter="get_lod_hysteresis" default="0.15">Limits oscillation around streaming LOD boundaries.</member>
+		<member name="max_concurrent_requests" type="int" setter="set_max_concurrent_requests" getter="get_max_concurrent_requests" default="0">Number of highest-priority runtime requests admitted at each refinement frontier. [code]0[/code] uses a platform default.</member>
+		<member name="max_tile_size_mb" type="int" setter="set_max_tile_size_mb" getter="get_max_tile_size_mb" default="64">Maximum source response size per tile in MiB.</member>
+		<member name="memory_budget_mb" type="int" setter="set_memory_budget_mb" getter="get_memory_budget_mb" default="0">Runtime resident memory budget in MiB. [code]0[/code] uses a platform default.</member>
+		<member name="request_timeout_sec" type="float" setter="set_request_timeout_sec" getter="get_request_timeout_sec" default="30.0">Timeout for each HTTP attempt.</member>
+		<member name="retry_count" type="int" setter="set_retry_count" getter="get_retry_count" default="2">Retries for network and HTTP server errors.</member>
+		<member name="source_uri" type="String" setter="set_source_uri" getter="get_source_uri" default="&quot;&quot;">Root OSG or OSGB URI.</member>
+		<member name="unit_scale" type="float" setter="set_unit_scale" getter="get_unit_scale" default="1.0">Godot units per source coordinate unit.</member>
+		<member name="upload_budget_ms" type="float" setter="set_upload_budget_ms" getter="get_upload_budget_ms" default="4.0">Target main-thread upload time per frame.</member>
+		<member name="world_origin_mode" type="int" setter="set_world_origin_mode" getter="get_world_origin_mode" enum="TiledMeshInstance3D.WorldOriginMode" default="0">How the initial source origin is selected.</member>
+		<member name="world_origin_x" type="float" setter="set_world_origin_x" getter="get_world_origin_x" default="0.0" />
+		<member name="world_origin_y" type="float" setter="set_world_origin_y" getter="get_world_origin_y" default="0.0" />
+		<member name="world_origin_z" type="float" setter="set_world_origin_z" getter="get_world_origin_z" default="0.0" />
+	</members>
+	<signals>
+		<signal name="load_failed"><param index="0" name="uri" type="String" /><param index="1" name="message" type="String" /></signal>
+		<signal name="root_loaded" />
+		<signal name="streaming_stats_changed"><param index="0" name="stats" type="Dictionary" /></signal>
+		<signal name="tile_failed"><param index="0" name="uri" type="String" /><param index="1" name="message" type="String" /></signal>
+		<signal name="tile_loaded"><param index="0" name="uri" type="String" /></signal>
+		<signal name="world_origin_changed"><param index="0" name="origin" type="PackedFloat64Array" /></signal>
+	</signals>
+	<constants>
+		<constant name="AXIS_MODE_OSG_Z_UP" value="0" enum="AxisMode">Maps OSG [code](X, Y, Z)[/code] to Godot [code](X, Z, -Y)[/code].</constant>
+		<constant name="AXIS_MODE_GODOT_Y_UP" value="1" enum="AxisMode">Keeps source axes unchanged.</constant>
+		<constant name="WORLD_ORIGIN_ROOT_CENTER" value="0" enum="WorldOriginMode">Uses the root dataset center.</constant>
+		<constant name="WORLD_ORIGIN_EXPLICIT" value="1" enum="WorldOriginMode">Uses the explicit origin properties.</constant>
+		<constant name="TILE_STATE_UNLOADED" value="0" enum="TileState" />
+		<constant name="TILE_STATE_REQUESTED" value="1" enum="TileState" />
+		<constant name="TILE_STATE_DOWNLOADED" value="2" enum="TileState" />
+		<constant name="TILE_STATE_PARSING" value="3" enum="TileState" />
+		<constant name="TILE_STATE_CPU_READY" value="4" enum="TileState" />
+		<constant name="TILE_STATE_UPLOADING" value="5" enum="TileState" />
+		<constant name="TILE_STATE_RESIDENT" value="6" enum="TileState" />
+		<constant name="TILE_STATE_FAILED" value="7" enum="TileState" />
+		<constant name="TILE_STATE_CANCELLED" value="8" enum="TileState" />
+	</constants>
+</class>

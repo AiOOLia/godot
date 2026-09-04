@@ -1,0 +1,134 @@
+/* -*-c++-*- OpenSceneGraph - Copyright (C) 1998-2006 Robert Osfield
+ *
+ * This library is open source and may be redistributed and/or modified under
+ * the terms of the OpenSceneGraph Public License (OSGPL) version 0.0 or
+ * (at your option) any later version.  The full license is in LICENSE file
+ * included with this distribution, and on the openscenegraph.org website.
+ *
+ * This library is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * OpenSceneGraph Public License for more details.
+*/
+
+
+#include <osg/GraphicsThread>
+#include <osg/GraphicsContext>
+#include <osg/GLObjects>
+#include <osg/Notify>
+
+using namespace osg;
+
+GraphicsThread::GraphicsThread()
+{
+}
+
+void GraphicsThread::run()
+{
+    // make the graphics context current.
+    GraphicsContext* graphicsContext = dynamic_cast<GraphicsContext*>(_parent.get());
+    if (graphicsContext)
+    {
+        graphicsContext->makeCurrent();
+
+        graphicsContext->getState()->initializeExtensionProcs();
+    }
+
+    OperationThread::run();
+
+    // release operations before the thread stops working.
+    _operationQueue->releaseAllOperations();
+
+    if (graphicsContext)
+    {
+        graphicsContext->releaseContext();
+    }
+
+}
+
+void GraphicsOperation::operator () (Object* object)
+{
+    osg::GraphicsContext* context = dynamic_cast<osg::GraphicsContext*>(object);
+    if (context) operator() (context);
+}
+
+void SwapBuffersOperation::operator () (GraphicsContext* context)
+{
+    context->swapBuffersCallbackOrImplementation();
+    context->clear();
+}
+
+void BarrierOperation::release()
+{
+}
+
+void BarrierOperation::operator () (Object* /*object*/)
+{
+   
+}
+
+void ReleaseContext_Block_MakeCurrentOperation::release()
+{
+
+}
+
+
+void ReleaseContext_Block_MakeCurrentOperation::operator () (GraphicsContext* context)
+{
+   
+}
+
+
+BlockAndFlushOperation::BlockAndFlushOperation():
+    osg::Referenced(true),
+    GraphicsOperation("Block",false)
+{
+
+}
+
+void BlockAndFlushOperation::release()
+{
+
+}
+
+void BlockAndFlushOperation::operator () (GraphicsContext*)
+{
+
+}
+
+FlushDeletedGLObjectsOperation::FlushDeletedGLObjectsOperation(double availableTime, bool keep):
+    osg::Referenced(true),
+    GraphicsOperation("FlushDeletedGLObjectsOperation",keep),
+    _availableTime(availableTime)
+{
+}
+
+void FlushDeletedGLObjectsOperation::operator () (GraphicsContext* context)
+{
+    State* state = context->getState();
+    unsigned int contextID = state ? state->getContextID() : 0;
+    const FrameStamp* frameStamp = state ? state->getFrameStamp() : 0;
+    double currentTime = frameStamp ? frameStamp->getReferenceTime() : 0.0;
+    double availableTime = _availableTime;
+
+    flushDeletedGLObjects(contextID, currentTime, availableTime);
+}
+
+
+void RunOperations::operator () (osg::GraphicsContext* context)
+{
+    context->runOperations();
+}
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// EndOfDynamicDrawBlock
+//
+EndOfDynamicDrawBlock::EndOfDynamicDrawBlock(unsigned int numberOfBlocks)
+{
+}
+
+void EndOfDynamicDrawBlock::completed(osg::State* /*state*/)
+{
+}
