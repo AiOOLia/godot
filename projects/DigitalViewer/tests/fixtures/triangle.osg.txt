@@ -1,0 +1,31 @@
+#Ascii Scene
+#Version 161
+#Generator DigitalViewer fixture
+osg::Geode {
+  UniqueID 1
+  Name "DesktopTriangle"
+  Drawables 1 {
+    osg::Geometry {
+      UniqueID 2
+      PrimitiveSetList 1 {
+        osg::DrawArrays {
+          UniqueID 3
+          Mode TRIANGLES
+          First 0
+          Count 3
+        }
+      }
+      VertexArray TRUE {
+        osg::Vec3Array {
+          UniqueID 4
+          Binding BIND_PER_VERTEX
+          vector 3 {
+            0 0 0
+            1 0 0
+            0 1 0
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,6 @@
+.godot/
+.godot_appdata*/
+*.tmp
+build/
+tests/desktop-result.png
+tests/desktop-result.png.import

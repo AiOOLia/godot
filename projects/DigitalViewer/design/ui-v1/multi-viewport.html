@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DigitalViewer · Multi-Viewport</title>
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="multi.css?v=v1-add-script-20261026">
+</head>
+<body>
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <defs>
+    <radialGradient id="gOcean" cx="36%" cy="28%" r="82%">
+      <stop offset="0" stop-color="#2F7F8D"/><stop offset=".46" stop-color="#18505F"/><stop offset="1" stop-color="#071C27"/>
+    </radialGradient>
+    <radialGradient id="gAtmo" cx="50%" cy="50%" r="50%">
+      <stop offset=".70" stop-color="#5FD6C3" stop-opacity="0"/>
+      <stop offset=".90" stop-color="#5FD6C3" stop-opacity=".20"/>
+      <stop offset="1" stop-color="#5FD6C3" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="gLand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#33745F"/><stop offset="1" stop-color="#1B463E"/>
+    </linearGradient>
+    <radialGradient id="gShade" cx="34%" cy="26%" r="78%">
+      <stop offset=".52" stop-color="#000000" stop-opacity="0"/><stop offset="1" stop-color="#000000" stop-opacity=".58"/>
+    </radialGradient>
+    <clipPath id="gClip"><circle cx="320" cy="320" r="248"/></clipPath>
+    <filter id="gSoft"><feGaussianBlur stdDeviation="7"/></filter>
+  </defs>
+
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-detach" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="m20 4-9 9"/><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/></symbol>
+  <symbol id="i-dock" viewBox="0 0 24 24"><path d="M9 4H4v16h16v-5"/><path d="m14 10 6-6"/><path d="M15 4h5v5"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></symbol>
+  <symbol id="i-mountain" viewBox="0 0 24 24"><path d="m8 3 4 8 5-5 5 15H2L8 3z"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="m21 8-9-5-9 5v8l9 5 9-5V8z"/><path d="m3 8 9 5 9-5"/><path d="M12 13v9"/></symbol>
+  <symbol id="i-points" viewBox="0 0 24 24"><circle cx="5" cy="7" r="1.4"/><circle cx="12" cy="4" r="1.4"/><circle cx="19" cy="8" r="1.4"/><circle cx="7" cy="17" r="1.4"/><circle cx="15" cy="14" r="1.4"/><circle cx="20" cy="19" r="1.4"/></symbol>
+  <symbol id="i-archive" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="5" rx="1"/><path d="M4 9v10a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9"/><path d="M10 13h4"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"/><path d="m19 15 .9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 1 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 1 0 7 7l1.5-1.5"/></symbol>
+  <symbol id="i-split-h" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/></symbol>
+  <symbol id="i-split-v" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 12h18"/></symbol>
+  <symbol id="i-detach" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></symbol>
+  <symbol id="i-maximize" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+  <symbol id="i-minimize" viewBox="0 0 24 24"><path d="M8 3v3a2 2 0 0 1-2 2H3M16 3v3a2 2 0 0 0 2 2h3M8 21v-3a2 2 0 0 0-2-2H3M16 21v-3a2 2 0 0 1 2-2h3"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/></symbol>
+  <symbol id="i-more-h" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M8 4v16M16 4v16"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/></symbol>
+
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/></symbol>
+  <symbol id="i-navigation" viewBox="0 0 24 24"><path d="m3 11 19-9-9 19-2-8-8-2z"/></symbol>
+  <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-bookmark-plus" viewBox="0 0 24 24"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/><path d="M12 7v6M9 10h6"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 21v-6M4 11V3M12 21v-9M12 8V3M20 21v-3M20 14V3"/><path d="M1 13h6M9 9h6M17 15h6"/></symbol>
+  <symbol id="i-orbit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M20.2 7.8c1.6 2.7-1.5 6.6-6.9 8.7s-10 1.5-11.6-1.2 1.5-6.6 6.9-8.7 10-1.5 11.6 1.2z"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></symbol>
+  <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"/></symbol>
+  <symbol id="i-arrow-up" viewBox="0 0 24 24"><path d="M12 19V5M5 12l7-7 7 7"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4.2-3 7.4-7 9-4-1.6-7-4.8-7-9V6l7-3z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="i-crosshair" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="m6 3 14 9-14 9V3z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></symbol>
+  <symbol id="art-globe" viewBox="0 0 640 640">
+    <circle cx="320" cy="320" r="282" fill="url(#gAtmo)" filter="url(#gSoft)"/>
+    <g clip-path="url(#gClip)">
+      <circle cx="320" cy="320" r="248" fill="url(#gOcean)"/>
+      <g fill="url(#gLand)" opacity=".92" stroke="#6FC4AC" stroke-opacity=".34" stroke-width="1">
+        <path d="M300 168 C340 140 400 138 448 158 C492 176 516 204 508 232 C500 258 466 268 442 282 C416 296 392 292 372 276 C348 258 330 238 312 216 C300 202 292 186 300 168 Z"/>
+        <path d="M330 286 C356 278 380 288 390 310 C400 338 384 382 360 408 C344 424 326 420 318 398 C306 366 308 324 330 286 Z"/>
+        <path d="M212 188 C236 176 258 186 266 208 C274 232 260 254 248 274 C240 290 244 310 232 330 C220 350 200 368 188 350 C176 332 180 306 190 284 C200 262 196 232 202 210 Z"/>
+        <path d="M238 338 C252 330 264 342 262 360 C260 382 250 408 238 424 C228 436 216 430 216 414 C216 390 226 360 238 338 Z"/>
+        <path d="M452 352 C474 342 500 348 508 366 C516 384 502 402 480 406 C462 410 444 398 442 382 C440 370 444 358 452 352 Z"/>
+        <path d="M258 158 C272 148 290 154 292 168 C294 182 282 194 268 192 C256 190 250 170 258 158 Z"/>
+        <path d="M120 500 C200 476 280 470 360 478 C420 484 470 496 500 514 L500 590 L120 590 Z"/>
+      </g>
+      <g fill="url(#gLand)" opacity=".8" stroke="#6FC4AC" stroke-opacity=".28" stroke-width=".8">
+        <ellipse cx="296" cy="198" rx="5" ry="9" transform="rotate(18 296 198)"/>
+        <path d="M470 248 C478 242 484 248 480 258 C476 268 468 266 466 258 Z"/>
+        <ellipse cx="406" cy="396" rx="6" ry="12" transform="rotate(-18 406 396)"/>
+        <ellipse cx="452" cy="352" rx="12" ry="4.5" transform="rotate(-12 452 352)"/>
+        <ellipse cx="470" cy="360" rx="8" ry="3.5"/>
+        <ellipse cx="524" cy="404" rx="4" ry="9" transform="rotate(18 524 404)"/>
+      </g>
+      <g fill="none" stroke="#9FE8DA" stroke-opacity=".16" stroke-width="1">
+        <ellipse cx="320" cy="320" rx="248" ry="38"/>
+        <ellipse cx="320" cy="196" rx="215" ry="33"/>
+        <ellipse cx="320" cy="444" rx="215" ry="33"/>
+        <ellipse cx="320" cy="105" rx="124" ry="19"/>
+        <ellipse cx="320" cy="535" rx="124" ry="19"/>
+        <ellipse cx="320" cy="80" rx="64" ry="10"/>
+        <ellipse cx="320" cy="560" rx="64" ry="10"/>
+        <ellipse cx="320" cy="320" rx="248" ry="248"/>
+        <ellipse cx="320" cy="320" rx="225" ry="248"/>
+        <ellipse cx="320" cy="320" rx="159" ry="248"/>
+        <ellipse cx="320" cy="320" rx="64" ry="248"/>
+      </g>
+      <g opacity=".96">
+        <polygon points="316,222 440,236 430,302 306,286" fill="#2CB79A" fill-opacity=".05" stroke="#63E6CB" stroke-opacity=".34" stroke-dasharray="3 4"/>
+        <text x="318" y="216" fill="#7FE8D3" fill-opacity=".72" font-family="Consolas, monospace" font-size="7" letter-spacing="1">TILE L17</text>
+        <ellipse cx="372" cy="286" rx="66" ry="14" fill="#051014" fill-opacity=".35"/>
+        <g>
+          <rect x="340" y="272" width="9" height="14" rx=".5" fill="#3F9187"/><polygon points="349,272 354,269 354,283 349,286" fill="#2A6C66"/><polygon points="340,272 349,272 354,269 345,269" fill="#62C9B6"/>
+          <rect x="352" y="262" width="12" height="22" rx=".5" fill="#4A9E92"/><polygon points="364,262 369,259 369,281 364,284" fill="#2F746D"/><polygon points="352,262 364,262 369,259 357,259" fill="#78D8C5"/>
+          <rect x="368" y="252" width="10" height="34" rx=".5" fill="#3C8B82"/><polygon points="378,252 383,249 383,283 378,286" fill="#286862"/><polygon points="368,252 378,252 383,249 373,249" fill="#6ECFBC"/>
+          <rect x="382" y="266" width="14" height="18" rx=".5" fill="#54A99C"/><polygon points="396,266 401,263 401,281 396,284" fill="#347C74"/><polygon points="382,266 396,266 401,263 387,263" fill="#86E0CE"/>
+          <rect x="400" y="258" width="9" height="26" rx=".5" fill="#408F86"/><polygon points="409,258 414,255 414,281 409,284" fill="#2A6C66"/><polygon points="400,258 409,258 414,255 405,255" fill="#74D4C1"/>
+          <rect x="412" y="268" width="11" height="16" rx=".5" fill="#48998E"/><polygon points="423,268 428,265 428,281 423,284" fill="#2E726B"/><polygon points="412,268 423,268 428,265 417,265" fill="#7EDBC8"/>
+          <rect x="330" y="280" width="7" height="8" rx=".5" fill="#386F69"/><polygon points="337,280 340,278 340,286 337,288" fill="#265A55"/>
+          <rect x="396" y="242" width="7" height="12" rx=".5" fill="#5BB4A6"/><polygon points="403,242 406,240 406,252 403,254" fill="#367D75"/><polygon points="396,242 403,242 406,240 399,240" fill="#8CE7D5"/>
+        </g>
+      </g>
+      <ellipse cx="218" cy="198" rx="168" ry="104" fill="#FFFFFF" fill-opacity=".045" filter="url(#gSoft)"/>
+      <circle cx="320" cy="320" r="248" fill="url(#gShade)"/>
+    </g>
+    <circle cx="320" cy="320" r="248" fill="none" stroke="#8FE0D2" stroke-opacity=".34" stroke-width="1"/>
+    <circle cx="320" cy="320" r="252" fill="none" stroke="#CFF9F1" stroke-opacity=".10" stroke-width="2"/>
+  </symbol>
+</svg>
+
+<section class="app desktop multi-app" id="app">
+  <header class="topbar">
+    <div class="pop-wrap brand-wrap">
+      <button class="brand" type="button" data-app-menu aria-haspopup="menu" aria-expanded="false" aria-label="应用菜单">
+        <span class="brand-mark"><svg class="ic"><use href="#i-globe"/></svg></span>
+        <span class="brand-text"><strong>DigitalViewer</strong><small>v1.0</small></span>
+        <svg class="ic brand-chev"><use href="#i-chevron-down"/></svg>
+      </button>
+      <div class="popover pop-appmenu" id="appMenu" role="menu" aria-label="应用菜单">
+        <div class="pop-head"><strong>DigitalViewer</strong><span>v1.0.0</span></div>
+        <button class="pop-item" type="button" data-app="about"><span class="pop-ic"><svg class="ic"><use href="#i-info"/></svg></span><span><strong>关于 DigitalViewer</strong><small>版本、引擎与隐私说明</small></span></button>
+        <button class="pop-item" type="button" data-app="settings"><span class="pop-ic"><svg class="ic"><use href="#i-settings"/></svg></span><span><strong>设置</strong><small>语言、显示与隐私</small></span></button>
+        <div class="pop-sep"></div>
+        <button class="pop-item" type="button" data-app="quit"><span class="pop-ic danger"><svg class="ic"><use href="#i-power"/></svg></span><span><strong>退出应用</strong><small>取消任务并清理会话</small></span></button>
+      </div>
+    </div>
+    <span class="tb-sep"></span>
+
+    <span class="grow"></span>
+
+    <button class="btn ghost" type="button" data-act="props" aria-label="属性面板" title="属性面板"><svg class="ic"><use href="#i-sliders"/></svg><span class="btn-label">属性</span></button>
+    <button class="btn ghost" type="button" data-act="script" aria-label="脚本面板" title="脚本面板"><svg class="ic"><use href="#i-terminal"/></svg><span class="btn-label">脚本</span></button>
+    <span class="fps-pill"><span class="dot"></span>60 FPS</span>
+    <button class="btn icon" type="button" data-act="settings" title="设置" aria-label="设置"><svg class="ic"><use href="#i-settings"/></svg></button>
+  </header>
+
+  <div class="workspace multi-workspace">
+    <aside class="side-dock" id="sideDock">
+      <div class="panel-slot" id="propSlot">
+        <section class="side-panel" id="propPanel">
+          <div class="panel-head">
+            <div class="prop-heading">
+              <div class="prop-title" id="vpTitle">视口 1</div>
+              <div class="prop-sub" id="propSub">视口属性</div>
+            </div>
+            <span class="chip ok" id="propChip">独立</span>
+            <button class="icon-btn" type="button" id="propAction" data-act="reset-vp" title="恢复该视口默认设置" aria-label="恢复默认设置"><svg class="ic"><use href="#i-refresh"/></svg></button>
+            <button class="icon-btn" type="button" data-panel-action="detach-props" title="独立窗口" aria-label="独立窗口"><svg class="ic"><use href="#i-detach"/></svg></button>
+            <button class="icon-btn" type="button" data-panel-action="close-props" title="关闭属性" aria-label="关闭属性"><svg class="ic"><use href="#i-x"/></svg></button>
+          </div>
+          <div class="panel-scroll vp-settings" id="settingsContent"></div>
+        </section>
+      </div>
+
+      <div class="stack-resizer" id="stackResizer" data-resize="stack" hidden></div>
+
+      <div class="panel-slot" id="aiSlot" hidden>
+        <section class="side-panel" id="aiPanel">
+          <header class="panel-bar">
+            <svg class="ic"><use href="#i-sparkles"/></svg>
+            <div class="panel-bar-title"><strong>AI 助手</strong><span>场景 Copilot · 仅运行时场景</span></div>
+            <span class="grow"></span>
+            <button class="icon-btn" type="button" data-panel-action="detach-ai" title="独立窗口" aria-label="独立窗口"><svg class="ic"><use href="#i-detach"/></svg></button>
+            <button class="icon-btn" type="button" data-panel-action="close-ai" title="关闭 AI" aria-label="关闭 AI"><svg class="ic"><use href="#i-x"/></svg></button>
+          </header>
+          <div class="multi-ai-log" id="aiLog">
+            <div class="multi-ai-msg assistant"><b>AI 助手</b><p>我是场景 Copilot，只修改当前运行场景；不改工程、文件、依赖或构建。修改先生成 GDScript 草案，审查后运行。</p></div>
+            <div class="ai-suggestions">
+              <button type="button" data-ai-prompt="用脚本隐藏所有视口的经纬网">脚本隐藏经纬网</button>
+              <button type="button" data-ai-prompt="用脚本统一所有视口的背景">脚本统一背景</button>
+              <button type="button" data-ai-prompt="检查脚本错误并给出修复草案">检查脚本</button>
+              <button type="button" data-ai-prompt="用脚本优化整个工程的性能">脚本优化性能</button>
+            </div>
+          </div>
+          <form class="ai-composer" id="aiForm">
+            <textarea id="aiInput" rows="1" placeholder="发消息或创建任务，/ 调用指令，@ 文件或对话" autocomplete="off"></textarea>
+            <div class="ai-composer-bar">
+              <button class="ai-plus" type="button" data-act="ai-attach" title="附件与引用" aria-label="附件与引用"><svg class="ic"><use href="#i-plus"/></svg></button>
+              <button class="ai-mode" type="button" data-act="ai-mode" title="修改范围"><svg class="ic"><use href="#i-shield"/></svg><span id="aiModeLabel">脚本修改</span><svg class="ic ai-chev"><use href="#i-chevron-down"/></svg></button>
+              <span class="grow"></span>
+              <button class="ai-model" type="button" id="aiModelButton" title="选择模型">
+                <span id="aiModelName">本地规则演示</span>
+                <span class="ai-model-badge" id="aiModelBadge">8K</span>
+                <span class="ai-reason">High</span>
+                <svg class="ic ai-chev"><use href="#i-chevron-down"/></svg>
+              </button>
+              <button class="ai-send" type="submit" aria-label="发送" title="发送" disabled><svg class="ic"><use href="#i-arrow-up"/></svg></button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </aside>
+
+    <div class="side-resizer" data-resize="side" title="拖动调整右栏宽度"></div>
+
+    <div class="main-stack" id="mainStack">
+      <section class="viewport-area" id="viewportArea">
+        <div class="vp-grid" id="vpGrid" data-layout="single"></div>
+      </section>
+
+      <div class="script-slot" id="scriptSlot" hidden>
+        <div class="script-resizer" data-resize="script"></div>
+        <section class="side-panel script-panel" id="scriptPanel">
+          <div class="script-toolbar">
+            <span class="gd">GDScript</span><span id="scriptFileName">satellite.gd</span>
+            <span class="script-scope">应用级</span>
+            <button class="btn link sm" type="button" data-script-act="new">新建</button>
+            <button class="btn link sm" type="button" data-script-act="open">打开</button>
+            <button class="btn link sm" type="button" data-script-act="save">保存</button>
+            <span class="script-dirty" id="scriptDirty">已保存</span>
+            <span class="grow"></span>
+            <button class="btn sm primary" type="button" id="runScript"><svg class="ic"><use href="#i-play"/></svg>运行</button>
+            <button class="btn sm" type="button" id="stopScript" disabled><svg class="ic"><use href="#i-stop"/></svg>停止</button>
+            <button class="icon-btn" type="button" data-panel-action="detach-script" title="独立窗口" aria-label="独立窗口"><svg class="ic"><use href="#i-detach"/></svg></button>
+            <button class="icon-btn" type="button" data-panel-action="close-script" title="关闭脚本" aria-label="关闭脚本"><svg class="ic"><use href="#i-x"/></svg></button>
+          </div>
+          <div class="script-ai-banner" id="scriptAiBanner" hidden>
+            <svg class="ic"><use href="#i-shield"/></svg>
+            <div><b>外部 AI 草案</b><span>编译通过 · 场景/相机 API · 检查点 #12</span></div>
+            <button class="btn link sm" type="button" data-act="show-script-diff">查看差异</button>
+          </div>
+          <div class="script-body">
+            <div class="script-editor">
+              <pre class="script-lines" id="scriptLines" aria-hidden="true">1
+2
+3
+4
+5
+6</pre>
+              <pre class="script-code" id="scriptCode" contenteditable="true" spellcheck="false"><span class="tok-kw">extends</span> <span class="tok-type">Node</span>
+
+<span class="tok-kw">func</span> <span class="tok-fn">_ready</span>() -&gt; <span class="tok-type">void</span>:
+    <span class="tok-comment"># 手工编写；Ctrl+S 保存</span>
+    <span class="tok-fn">print</span>(<span class="tok-str">"DigitalViewer script ready"</span>)</pre>
+            </div>
+            <div class="script-output">
+              <div class="script-out-head">输出</div>
+              <pre id="scriptLog">// 就绪</pre>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <div class="float-layer" id="floatLayer"></div>
+
+  <footer class="statusbar">
+    <span class="status-state"><span class="dot ok"></span><b id="statusActive">视口 1 · 活动</b></span>
+    <span class="sb-item">图层 <b id="statusLayers">4</b></span>
+    <span class="sb-item">共享 <b id="statusShared">1</b></span>
+    <span class="sb-item">请求 <b>6</b></span>
+    <span class="sb-item resident">Resident <b>659 MB / 1 GB</b><span class="budget"><i style="width:61%"></i></span></span>
+    <span class="grow"></span>
+    <span class="sb-item">共 <b id="statusVps">1</b> 个视口</span>
+    <span class="sb-item">多视口 · 自适应降级</span>
+  </footer>
+
+  <div class="vp-picker" id="vpPicker" hidden>
+    <div class="vp-picker-head"><strong>切换视口</strong><span>全部</span></div>
+    <div id="vpPickerList"></div>
+  </div>
+
+  <div class="pane-pop" id="panePop" hidden></div>
+  <div class="ai-model-pop" id="aiModelPop" hidden></div>
+
+  <div class="modal-layer" id="modalLayer">
+    <div class="modal" data-modal="add" role="dialog" aria-modal="true" aria-label="添加数据">
+      <div class="modal-scrim" data-close="add"></div>
+      <div class="modal-card add-card multi-add-card">
+        <header class="modal-head">
+          <div><strong>添加数据</strong><span>创建独立数据；需要共享请添加后拖到其他视口</span></div>
+          <button class="icon-btn" type="button" data-close="add" aria-label="关闭"><svg class="ic"><use href="#i-x"/></svg></button>
+        </header>
+        <div class="modal-body">
+          <div class="add-target">添加到 <span class="chip ok" id="addTarget">视口 1</span><span class="grow"></span><span class="fineprint">独立数据</span></div>
+          <div class="source-grid" id="sourceGrid">
+            <button type="button" class="source-card" data-source="ellipsoid"><svg class="ic"><use href="#i-globe"/></svg><b>WGS84 椭球</b><small>基础地球</small></button>
+            <button type="button" class="source-card is-on" data-source="local"><svg class="ic"><use href="#i-box"/></svg><b>本地文件</b><small>glTF / 3D Tiles / OSGB</small></button>
+            <button type="button" class="source-card" data-source="dir"><svg class="ic"><use href="#i-layers"/></svg><b>本地目录</b><small>分页与相对依赖</small></button>
+            <button type="button" class="source-card" data-source="zip"><svg class="ic"><use href="#i-archive"/></svg><b>ZIP 数据包</b><small>安全解压到会话</small></button>
+            <button type="button" class="source-card" data-source="remote"><svg class="ic"><use href="#i-globe"/></svg><b>远程地址</b><small>HTTP(S) / XYZ / WMTS</small></button>
+            <button type="button" class="source-card" data-source="wmts"><svg class="ic"><use href="#i-image"/></svg><b>WMTS</b><small>Capabilities 或模板</small></button>
+            <button type="button" class="source-card" data-source="ion"><svg class="ic"><use href="#i-layers"/></svg><b>Cesium ion</b><small>Asset ID 与会话 Token</small></button>
+            <button type="button" class="source-card" data-source="script"><svg class="ic"><use href="#i-terminal"/></svg><b>GDScript 脚本</b><small>.gd · 运行时行为</small></button>
+          </div>
+          <label class="field"><span>显示名称</span><input id="addName" value="新建数据"></label>
+          <div class="notice"><svg class="ic"><use href="#i-info"/></svg><span>添加后只出现在活动视口；其他视口保持独立，拖放图层才会建立共享引用。</span></div>
+        </div>
+        <div class="modal-actions"><span class="grow"></span><button class="btn" type="button" data-close="add">取消</button><button class="btn primary" type="button" data-act="do-add"><svg class="ic"><use href="#i-plus"/></svg>添加</button></div>
+      </div>
+    </div>
+
+    <div class="modal" data-modal="fly" role="dialog" aria-modal="true" aria-label="飞往坐标">
+      <div class="modal-scrim" data-close="fly"></div>
+      <div class="modal-card fly-card">
+        <header class="modal-head"><div><strong>飞往坐标</strong><span>目标：活动视口</span></div><button class="icon-btn" type="button" data-close="fly" aria-label="关闭"><svg class="ic"><use href="#i-x"/></svg></button></header>
+        <form class="modal-body" id="flyForm">
+          <div class="form-row two">
+            <label class="field"><span>经度</span><input id="flyLon" value="121.4737" inputmode="decimal"><small>−180 – 180</small></label>
+            <label class="field"><span>纬度</span><input id="flyLat" value="31.2304" inputmode="decimal"><small>−90 – 90</small></label>
+            <label class="field"><span>观察高度 (km)</span><input id="flyHeight" value="8.42" inputmode="decimal"><small>0 – 100,000</small></label>
+          </div>
+          <div class="fly-current"><svg class="ic"><use href="#i-crosshair"/></svg><span>当前 <b id="flyCurrent">—</b></span><button class="btn link sm" type="button" data-act="use-current">使用当前位置</button></div>
+          <div class="modal-actions"><button class="btn" type="button" data-close="fly">取消</button><button class="btn primary" type="submit"><svg class="ic"><use href="#i-navigation"/></svg>开始飞行</button></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal" data-modal="model" role="dialog" aria-modal="true" aria-label="添加 AI 模型">
+      <div class="modal-scrim" data-close="model"></div>
+      <div class="modal-card model-card">
+        <header class="modal-head"><div><strong>添加模型</strong><span>模型配置仅在当前会话使用，不写入磁盘</span></div><button class="icon-btn" type="button" data-close="model" aria-label="关闭"><svg class="ic"><use href="#i-x"/></svg></button></header>
+        <form class="modal-body" id="modelForm">
+          <label class="field"><span>显示名称</span><input id="modelName" placeholder="例如：GPT-4o / 本地 Llama" autocomplete="off" required></label>
+          <div class="form-row two">
+            <label class="field"><span>提供方</span><select id="modelProvider">
+              <option value="openai">OpenAI 兼容</option>
+              <option value="ollama">Ollama</option>
+              <option value="custom">自定义</option>
+            </select></label>
+            <label class="field"><span>模型 ID</span><input id="modelId" placeholder="gpt-4o" autocomplete="off" required></label>
+          </div>
+          <label class="field"><span>Base URL</span><input id="modelBase" placeholder="https://api.openai.com/v1" autocomplete="off" required></label>
+          <div class="form-row two">
+            <label class="field"><span>API Key</span><input id="modelKey" type="password" placeholder="仅当前会话" autocomplete="new-password"></label>
+            <label class="field"><span>上下文窗口</span><input id="modelContext" placeholder="128K" autocomplete="off"></label>
+          </div>
+          <div class="notice"><svg class="ic"><use href="#i-shield"/></svg><span>凭据只在本次会话内存中使用；不发送测试请求，不写入 localStorage。</span></div>
+          <div class="modal-actions"><button class="btn" type="button" data-close="model">取消</button><button class="btn primary" type="submit"><svg class="ic"><use href="#i-plus"/></svg>保存并选择</button></div>
+        </form>
+      </div>
+    </div>
+
+    <div class="modal" data-modal="run-script" role="dialog" aria-modal="true" aria-label="运行脚本">
+      <div class="modal-scrim" data-close="run-script"></div>
+      <div class="modal-card trust-card">
+        <header class="modal-head"><div><strong>运行脚本</strong><span>脚本草案 · 确认后才会执行</span></div><button class="icon-btn" type="button" data-close="run-script" aria-label="关闭"><svg class="ic"><use href="#i-x"/></svg></button></header>
+        <div class="modal-body">
+          <div class="trust-summary"><span>GDScript</span><b>satellite.gd</b><em>检查点 #12</em></div>
+          <ul class="trust-list">
+            <li><svg class="ic"><use href="#i-check"/></svg>权限：场景、相机、图层；不开放文件/网络/终端</li>
+            <li><svg class="ic"><use href="#i-check"/></svg>已编译；差异 +9 −0</li>
+            <li><svg class="ic"><use href="#i-alert-triangle"/></svg>脚本拥有应用权限；同步死循环无法停止</li>
+          </ul>
+          <label class="trust-check"><input type="checkbox" id="runTrust"><span>我已审查脚本，确认在当前场景运行</span></label>
+        </div>
+        <div class="modal-actions"><button class="btn" type="button" data-close="run-script">取消</button><button class="btn primary" type="button" id="confirmRun" disabled><svg class="ic"><use href="#i-play"/></svg>确认运行</button></div>
+      </div>
+    </div>
+
+    <div class="modal" data-modal="settings" role="dialog" aria-modal="true" aria-label="设置">
+      <div class="modal-scrim" data-close="settings"></div>
+      <div class="modal-card settings-card">
+        <header class="modal-head"><div><strong>设置</strong><span>v1 只持久化语言与非敏感显示偏好</span></div><button class="icon-btn" type="button" data-close="settings" aria-label="关闭"><svg class="ic"><use href="#i-x"/></svg></button></header>
+        <div class="modal-body">
+          <div class="section-label">语言</div>
+          <div class="setting-row"><div><b>界面语言</b><small>默认跟随系统</small></div><div class="seg"><button type="button" class="is-on">简体中文</button><button type="button">English</button></div></div>
+          <div class="section-label">显示</div>
+          <div class="setting-row"><div><b>主题</b><small>v1 正式发布仅深色</small></div><div class="seg"><button type="button" class="is-on">深色</button><button type="button">浅色</button></div></div>
+          <div class="setting-row"><div><b>减少动态效果</b><small>关闭面板过渡与相机缓动</small></div><button class="switch" type="button" aria-label="减少动态效果"></button></div>
+          <div class="section-label">性能</div>
+          <div class="setting-row"><div><b>Resident 预算</b><small>桌面 1 GiB</small></div><span class="kv-pill">659 MB / 1 GB</span></div>
+          <div class="section-label automation-only">自动化 / 外部 AI</div>
+          <div class="setting-row mcp-row automation-only"><div><b>MCP 本机端点</b><small>Codex / Harness 通过同一脚本 API 控制场景</small></div><code>127.0.0.1:8731/mcp</code><button class="btn sm" type="button" data-act="copy-mcp">复制</button></div>
+          <div class="setting-row automation-only"><div><b>外部 AI 权限</b><small>只读场景 / 运行脚本 / 截图</small></div><span class="kv-pill">3 项</span></div>
+          <p class="fineprint">v1 不内置 AI 助手；外部 AI 只能通过 MCP 操作运行时场景。不收集遥测；不保存 Token、URL、本地路径、图层、配准或视点。</p>
+        </div>
+        <div class="modal-actions"><span class="grow"></span><button class="btn primary" type="button" data-close="settings">完成</button></div>
+      </div>
+    </div>
+
+    <div class="modal" data-modal="about" role="dialog" aria-modal="true" aria-label="关于 DigitalViewer">
+      <div class="modal-scrim" data-close="about"></div>
+      <div class="modal-card about-card">
+        <header class="modal-head"><div><strong>关于 DigitalViewer</strong><span>跨平台三维与地理空间数据查看器</span></div><button class="icon-btn" type="button" data-close="about" aria-label="关闭"><svg class="ic"><use href="#i-x"/></svg></button></header>
+        <div class="modal-body">
+          <div class="about-hero"><span class="brand-mark"><svg class="ic"><use href="#i-globe"/></svg></span><div><b>DigitalViewer</b><span>v1.0.0</span><p>定制 Godot 4.7.3-rc · Compatibility 渲染器</p></div></div>
+          <div class="about-grid"><div><span>包标识</span><b>org.digitalviewer.app</b></div><div><span>渲染器</span><b>Compatibility</b></div><div><span>界面语言</span><b>简体中文 / English</b></div><div><span>会话数据</span><b>退出后清空</b></div></div>
+          <p class="fineprint">不收集遥测；Token、URL、本地路径、图层、配准与视点均不写入磁盘。</p>
+        </div>
+        <div class="modal-actions"><span class="grow"></span><button class="btn primary" type="button" data-close="about">关闭</button></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pane-menu" id="paneMenu" hidden></div>
+  <div class="detached-layer" id="detachedLayer"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</section>
+
+<script src="multi.js?v=v1-add-script-20261026"></script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+PagedLOD {
+  Center 0.5 0.5 0
+  Radius 2
+  RangeMode PIXEL_SIZE_ON_SCREEN
+  RangeList 2 { 0 1 1 1e+30 }
+  DatabasePath @DATABASE@
+  FileNameList 2 { "" "child.osg" }
+  num_children 1
+  Geode {
+    num_drawables 1
+    Geometry {
+      StateSet {
+        Material {
+          ColorMode OFF
+          diffuseColor 1 1 1 1
+        }
+        textureUnit 0 {
+          GL_TEXTURE_2D ON
+          Texture2D { file "texture.png" }
+        }
+      }
+      PrimitiveSets 1 { DrawElementsUInt TRIANGLES 3 { 0 1 2 } }
+      VertexArray Vec3Array 3 { 0 0 0 1 0 0 0 1 0 }
+      NormalBinding OVERALL
+      NormalArray Vec3Array 1 { 0 0 1 }
+      TexCoordArray 0 Vec2Array 3 { 0 0 1 0 0 1 }
+    }
+  }
+}

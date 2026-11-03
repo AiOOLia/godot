@@ -1,0 +1,93 @@
+extends Node
+# Creates one stylized tree in view_1. All geometry belongs to this script session.
+
+func run(viewer) -> void:
+	var view = viewer.viewport("view_1")
+	if view == null:
+		push_error("Viewport view_1 is unavailable.")
+		return
+	var tree: Node3D = viewer.content("view_1")
+	tree.name = "LowPolyTree"
+	var bark := make_material(Color("#765038"))
+	var branch_bark := make_material(Color("#8b6142"))
+	var leaves: Array[StandardMaterial3D] = [
+		make_material(Color("#35774a")),
+		make_material(Color("#438a50")),
+		make_material(Color("#559b57")),
+		make_material(Color("#6aaa60"))
+	]
+
+	add_branch(tree, "Trunk", Vector3(0, 0, 0), Vector3(0.04, 2.65, 0), 0.23, 0.07, bark)
+	for i in range(6):
+		var angle := float(i) * TAU / 6.0
+		var tip := Vector3(cos(angle) * 0.48, 0.045, sin(angle) * 0.48)
+		add_branch(tree, "Root_%02d" % i, tip, Vector3(0, 0.43, 0), 0.025, 0.13, bark)
+
+	var tips: Array[Vector3] = [
+		Vector3(-0.95, 2.5, 0.12),
+		Vector3(0.87, 2.55, 0.18),
+		Vector3(-0.12, 2.6, 0.87),
+		Vector3(0.20, 2.75, -0.80),
+		Vector3(-0.62, 3.08, -0.42),
+		Vector3(0.57, 3.18, 0.40)
+	]
+	for i in range(tips.size()):
+		var start := Vector3(0.02, 1.2 + float(i) * 0.18, 0)
+		var joint := start.lerp(tips[i], 0.58) + Vector3(0, 0.13, 0)
+		add_branch(tree, "Branch_%02d" % i, start, joint, 0.095, 0.055, branch_bark)
+		add_branch(tree, "Twig_%02d" % i, joint, tips[i], 0.055, 0.018, branch_bark)
+
+	var centers: Array[Vector3] = [
+		Vector3(-1.00, 2.55, 0.12), Vector3(0.95, 2.63, 0.18),
+		Vector3(-0.12, 2.64, 0.87), Vector3(0.20, 2.78, -0.78),
+		Vector3(-0.65, 3.12, -0.42), Vector3(0.59, 3.18, 0.43),
+		Vector3(0.02, 3.52, 0.03), Vector3(-0.48, 2.93, 0.52),
+		Vector3(0.62, 2.91, -0.39), Vector3(-0.58, 2.60, -0.51),
+		Vector3(0.04, 3.12, -0.14), Vector3(0.37, 2.42, 0.57)
+	]
+	var sizes: Array[Vector3] = [
+		Vector3(0.72, 0.65, 0.68), Vector3(0.76, 0.69, 0.66),
+		Vector3(0.73, 0.62, 0.68), Vector3(0.76, 0.71, 0.64),
+		Vector3(0.70, 0.73, 0.68), Vector3(0.74, 0.70, 0.70),
+		Vector3(0.70, 0.72, 0.66), Vector3(0.69, 0.69, 0.64),
+		Vector3(0.70, 0.72, 0.62), Vector3(0.64, 0.60, 0.61),
+		Vector3(0.78, 0.74, 0.73), Vector3(0.58, 0.55, 0.59)
+	]
+	for i in range(centers.size()):
+		var crown := MeshInstance3D.new()
+		crown.name = "Foliage_%02d" % i
+		var mesh := SphereMesh.new()
+		mesh.radius = 1.0
+		mesh.height = 2.0
+		mesh.radial_segments = 10
+		mesh.rings = 5
+		crown.mesh = mesh
+		crown.material_override = leaves[i % leaves.size()]
+		tree.add_child(crown)
+		crown.position = centers[i]
+		crown.scale = sizes[i]
+		crown.rotation = Vector3(0.09 * float(i % 3), 0.71 * float(i), 0.08 * float(i % 4))
+
+	view.frame_bounds(AABB(Vector3(-1.9, -0.12, -1.7), Vector3(3.8, 4.55, 3.4)))
+	print("Added LowPolyTree to view_1: trunk, roots, branches, and 12 foliage clusters.")
+
+func make_material(color: Color) -> StandardMaterial3D:
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	material.roughness = 0.94
+	return material
+
+func add_branch(parent: Node3D, label: String, start: Vector3, end: Vector3, bottom: float, top: float, material: StandardMaterial3D) -> void:
+	var direction := end - start
+	var mesh := CylinderMesh.new()
+	mesh.bottom_radius = bottom
+	mesh.top_radius = top
+	mesh.height = direction.length()
+	mesh.radial_segments = 9
+	var branch := MeshInstance3D.new()
+	branch.name = label
+	branch.mesh = mesh
+	branch.material_override = material
+	parent.add_child(branch)
+	branch.position = (start + end) * 0.5
+	branch.basis = Basis(Quaternion(Vector3.UP, direction.normalized()))

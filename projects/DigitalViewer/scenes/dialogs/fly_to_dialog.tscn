@@ -1,0 +1,13 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/dialogs/fly_to_dialog.gd" id="1"]
+
+[node name="FlyToDialog" type="ConfirmationDialog"]
+title = "飞往坐标"
+initial_position = 2
+size = Vector2i(480, 390)
+min_size = Vector2i(420, 350)
+ok_button_text = "开始飞行"
+cancel_button_text = "取消"
+script = ExtResource("1")
+

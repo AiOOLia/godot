@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/components/layer_item.gd" id="1"]
+
+[node name="LayerItem" type="PanelContainer"]
+custom_minimum_size = Vector2(0, 52)
+mouse_filter = 0
+script = ExtResource("1")
+

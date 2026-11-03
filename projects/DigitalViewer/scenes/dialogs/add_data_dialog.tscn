@@ -1,0 +1,13 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/dialogs/add_data_dialog.gd" id="1"]
+
+[node name="AddDataDialog" type="ConfirmationDialog"]
+title = "添加数据"
+initial_position = 2
+size = Vector2i(520, 360)
+min_size = Vector2i(420, 320)
+ok_button_text = "添加到会话"
+cancel_button_text = "取消"
+script = ExtResource("1")
+

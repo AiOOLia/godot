@@ -1,0 +1,14 @@
+[gd_scene format=3 uid="uid://de3eidkopghb8"]
+
+[ext_resource type="Script" uid="uid://dkak1vwta4o6b" path="res://scripts/main_ui.gd" id="1"]
+[ext_resource type="Theme" path="res://themes/digitalviewer_theme.tres" id="2"]
+
+[node name="MainUI" type="Control" unique_id=705860618]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme = ExtResource("2")
+script = ExtResource("1")
