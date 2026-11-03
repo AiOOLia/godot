@@ -1,0 +1,74 @@
+#!/usr/bin/env python
+
+Import("env")
+Import("env_modules")
+
+env_draco = env_modules.Clone()
+env_draco.Append(CPPPATH=["#thirdparty/draco"])
+env_draco.Append(
+    CPPDEFINES=[
+        "DRACO_BACKWARDS_COMPATIBILITY_SUPPORTED",
+        "DRACO_MESH_COMPRESSION_SUPPORTED",
+        "DRACO_NORMAL_ENCODING_SUPPORTED",
+        "DRACO_POINT_CLOUD_COMPRESSION_SUPPORTED",
+        "DRACO_PREDICTIVE_EDGEBREAKER_SUPPORTED",
+        "DRACO_STANDARD_EDGEBREAKER_SUPPORTED",
+    ]
+)
+env_draco.disable_warnings()
+
+sources = [
+    "attributes/attribute_octahedron_transform.cc",
+    "attributes/attribute_quantization_transform.cc",
+    "attributes/attribute_transform.cc",
+    "attributes/geometry_attribute.cc",
+    "attributes/point_attribute.cc",
+    "compression/attributes/attributes_decoder.cc",
+    "compression/attributes/kd_tree_attributes_decoder.cc",
+    "compression/attributes/sequential_attribute_decoder.cc",
+    "compression/attributes/sequential_attribute_decoders_controller.cc",
+    "compression/attributes/sequential_integer_attribute_decoder.cc",
+    "compression/attributes/sequential_normal_attribute_decoder.cc",
+    "compression/attributes/sequential_quantization_attribute_decoder.cc",
+    "compression/bit_coders/adaptive_rans_bit_decoder.cc",
+    "compression/bit_coders/direct_bit_decoder.cc",
+    "compression/bit_coders/rans_bit_decoder.cc",
+    "compression/bit_coders/symbol_bit_decoder.cc",
+    "compression/decode.cc",
+    "compression/entropy/shannon_entropy.cc",
+    "compression/entropy/symbol_decoding.cc",
+    "compression/mesh/mesh_decoder.cc",
+    "compression/mesh/mesh_edgebreaker_decoder.cc",
+    "compression/mesh/mesh_edgebreaker_decoder_impl.cc",
+    "compression/mesh/mesh_sequential_decoder.cc",
+    "compression/point_cloud/algorithms/dynamic_integer_points_kd_tree_decoder.cc",
+    "compression/point_cloud/algorithms/float_points_tree_decoder.cc",
+    "compression/point_cloud/point_cloud_decoder.cc",
+    "compression/point_cloud/point_cloud_kd_tree_decoder.cc",
+    "compression/point_cloud/point_cloud_sequential_decoder.cc",
+    "core/bit_utils.cc",
+    "core/bounding_box.cc",
+    "core/data_buffer.cc",
+    "core/decoder_buffer.cc",
+    "core/divide.cc",
+    "core/draco_types.cc",
+    "core/hash_utils.cc",
+    "core/options.cc",
+    "core/quantization_utils.cc",
+    "core/status.cc",
+    "mesh/corner_table.cc",
+    "mesh/mesh.cc",
+    "mesh/mesh_attribute_corner_table.cc",
+    "metadata/geometry_metadata.cc",
+    "metadata/metadata.cc",
+    "metadata/metadata_decoder.cc",
+    "metadata/property_attribute.cc",
+    "metadata/property_table.cc",
+    "metadata/structural_metadata.cc",
+    "metadata/structural_metadata_schema.cc",
+    "point_cloud/point_cloud.cc",
+]
+for source in sources:
+    env_draco.add_source_files(env.modules_sources, "#thirdparty/draco/draco/" + source)
+
+env_draco.add_source_files(env.modules_sources, "*.cpp")

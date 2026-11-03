@@ -65,7 +65,11 @@
 #include "editor/file_system/editor_file_system.h"
 #endif
 
-#include "modules/modules_enabled.gen.h" // For csg, gridmap.
+#include "modules/modules_enabled.gen.h" // For csg, draco, gridmap.
+
+#ifdef MODULE_DRACO_ENABLED
+#include "modules/draco/draco_decoder.h"
+#endif
 
 #ifdef MODULE_CSG_ENABLED
 #include "modules/csg/csg_shape.h"
@@ -1482,6 +1486,75 @@ Error GLTFDocument::_parse_meshes(Ref<GLTFState> p_state) {
 			ERR_FAIL_COND_V(!mesh_prim.has("attributes"), ERR_PARSE_ERROR);
 
 			Dictionary a = mesh_prim["attributes"];
+
+			if (mesh_prim.has("extensions") && Dictionary(mesh_prim["extensions"]).has("KHR_draco_mesh_compression")) {
+#ifndef MODULE_DRACO_ENABLED
+				ERR_FAIL_V_MSG(ERR_UNAVAILABLE, "glTF import: KHR_draco_mesh_compression requires the Draco module.");
+#else
+				Dictionary draco_extension = Dictionary(mesh_prim["extensions"])["KHR_draco_mesh_compression"];
+				ERR_FAIL_COND_V(!draco_extension.has("bufferView") || !draco_extension.has("attributes"), ERR_FILE_CORRUPT);
+				const int view_index = draco_extension["bufferView"];
+				ERR_FAIL_INDEX_V(view_index, p_state->buffer_views.size(), ERR_FILE_CORRUPT);
+				const PackedByteArray compressed = p_state->buffer_views[view_index]->load_buffer_view_data(p_state);
+				DracoDecoder::Geometry decoded;
+				String decode_error;
+				const Error decode_result = DracoDecoder::decode(compressed.ptr(), compressed.size(), decoded, decode_error);
+				ERR_FAIL_COND_V_MSG(decode_result != OK, decode_result, "glTF import: Unable to decode Draco primitive: " + decode_error);
+				ERR_FAIL_COND_V(!decoded.is_mesh, ERR_FILE_CORRUPT);
+
+				Dictionary mapping = draco_extension["attributes"];
+				for (const Variant *key = mapping.next(nullptr); key; key = mapping.next(key)) {
+					const String semantic = *key;
+					ERR_FAIL_COND_V(!a.has(semantic), ERR_FILE_CORRUPT);
+					const int accessor_index = a[semantic];
+					const int unique_id = mapping[semantic];
+					ERR_FAIL_INDEX_V(accessor_index, p_state->accessors.size(), ERR_FILE_CORRUPT);
+					const Ref<GLTFAccessor> source_accessor = p_state->accessors[accessor_index];
+					const DracoDecoder::Attribute *attribute = decoded.attributes.getptr(unique_id);
+					static const int accessor_components[] = { 1, 2, 3, 4, 4, 9, 16 };
+					static const int draco_to_gltf[] = { 0, 5120, 5121, 5122, 5123, 5124, 5125, 5134, 5135, 5126, 5130 };
+					const int accessor_type = source_accessor->get_accessor_type();
+					ERR_FAIL_COND_V(!attribute || accessor_type < 0 || accessor_type >= int(sizeof(accessor_components) / sizeof(accessor_components[0])) ||
+									attribute->component_count != accessor_components[accessor_type] || source_accessor->get_count() != decoded.point_count ||
+									attribute->normalized != source_accessor->get_normalized() || attribute->component_type <= 0 ||
+									attribute->component_type >= int(sizeof(draco_to_gltf) / sizeof(draco_to_gltf[0])) || draco_to_gltf[attribute->component_type] != source_accessor->get_component_type(),
+							ERR_FILE_CORRUPT);
+
+					const PackedFloat64Array &values = attribute->values;
+					Array variants;
+					variants.resize(decoded.point_count);
+					for (int point = 0; point < decoded.point_count; point++) {
+						switch (attribute->component_count) {
+							case 1:
+								variants[point] = values[point];
+								break;
+							case 2:
+								variants[point] = Vector2(values[point * 2], values[point * 2 + 1]);
+								break;
+							case 3:
+								variants[point] = Vector3(values[point * 3], values[point * 3 + 1], values[point * 3 + 2]);
+								break;
+							case 4:
+								variants[point] = Vector4(values[point * 4], values[point * 4 + 1], values[point * 4 + 2], values[point * 4 + 3]);
+								break;
+							default:
+								ERR_FAIL_V(ERR_UNAVAILABLE);
+						}
+					}
+					const Variant::Type variant_type = attribute->component_count == 1 ? Variant::FLOAT : (attribute->component_count == 2 ? Variant::VECTOR2 : (attribute->component_count == 3 ? Variant::VECTOR3 : Variant::VECTOR4));
+					a[semantic] = GLTFAccessor::encode_new_accessor_from_variants(p_state, variants, variant_type, GLTFAccessor::GLTFAccessorType(accessor_type), GLTFAccessor::COMPONENT_TYPE_SINGLE_FLOAT, GLTFBufferView::TARGET_ARRAY_BUFFER, false);
+				}
+				ERR_FAIL_COND_V(!mesh_prim.has("indices"), ERR_FILE_CORRUPT);
+				const int index_accessor_index = mesh_prim["indices"];
+				ERR_FAIL_INDEX_V(index_accessor_index, p_state->accessors.size(), ERR_FILE_CORRUPT);
+				const Ref<GLTFAccessor> index_accessor = p_state->accessors[index_accessor_index];
+				ERR_FAIL_COND_V(index_accessor->get_accessor_type() != GLTFAccessor::TYPE_SCALAR || index_accessor->get_normalized() ||
+								(index_accessor->get_component_type() != GLTFAccessor::COMPONENT_TYPE_UNSIGNED_BYTE && index_accessor->get_component_type() != GLTFAccessor::COMPONENT_TYPE_UNSIGNED_SHORT && index_accessor->get_component_type() != GLTFAccessor::COMPONENT_TYPE_UNSIGNED_INT) ||
+								index_accessor->get_count() != decoded.indices.size(),
+						ERR_FILE_CORRUPT);
+				mesh_prim["indices"] = GLTFAccessor::encode_new_accessor_from_int32s(p_state, decoded.indices, GLTFBufferView::TARGET_ELEMENT_ARRAY_BUFFER, false);
+#endif
+			}
 
 			Mesh::PrimitiveType primitive = Mesh::PRIMITIVE_TRIANGLES;
 			if (mesh_prim.has("mode")) {
@@ -6971,6 +7044,9 @@ HashSet<String> GLTFDocument::get_supported_gltf_extensions_hashset() {
 	// Other built-in extensions are supported by GLTFDocumentExtension classes.
 	supported_extensions.insert("GODOT_single_root");
 	supported_extensions.insert("KHR_animation_pointer");
+#ifdef MODULE_DRACO_ENABLED
+	supported_extensions.insert("KHR_draco_mesh_compression");
+#endif
 	supported_extensions.insert("KHR_lights_punctual");
 	supported_extensions.insert("KHR_materials_emissive_strength");
 	supported_extensions.insert("KHR_materials_pbrSpecularGlossiness");

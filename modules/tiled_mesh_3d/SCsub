@@ -1,0 +1,13 @@
+#!/usr/bin/env python
+
+Import("env")
+Import("env_modules")
+
+env_tiled_mesh_3d = env_modules.Clone()
+module_obj = []
+env_tiled_mesh_3d.add_source_files(module_obj, "*.cpp")
+
+if env.editor_build:
+    env_tiled_mesh_3d.add_source_files(module_obj, "editor/*.cpp")
+
+env.modules_sources += module_obj

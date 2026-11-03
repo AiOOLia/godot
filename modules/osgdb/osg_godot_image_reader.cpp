@@ -30,13 +30,13 @@
 
 #include "osg_godot_image_reader.h"
 
-#include "osg_data_source.h"
+#include "modules/tiled_mesh_3d/tiled_mesh_data_source.h"
 
-#include <osg/Image>
 #include <osgDB/ReaderWriter.h>
 #include <osgDB/Registry.h>
 
 #include <cstring>
+#include <osg/Image>
 
 namespace {
 
@@ -65,7 +65,7 @@ public:
 		memcpy(bytes.ptrw(), p_buffer, p_size);
 		Ref<Image> image;
 		String error;
-		if (OsgDataSource::decode_image_bytes(bytes, ext.c_str(), image, error) != OK) {
+		if (TiledMeshDataSource::decode_image_bytes(bytes, ext.c_str(), image, error) != OK) {
 			return ReadResult(error.utf8().get_data());
 		}
 		const PackedByteArray rgba = image->get_data();

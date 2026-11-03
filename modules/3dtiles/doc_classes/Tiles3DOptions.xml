@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="Tiles3DOptions" inherits="TiledMeshFormatOptions" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Controls the coordinate frame of streamed 3D Tiles datasets.
+	</brief_description>
+	<description>
+		Assign to [member TiledMeshInstance3D.format_options] to select the [code]3dtiles[/code] adapter. Supports explicit 3D Tiles 1.0/1.1 tilesets, external tilesets, multiple contents, static glTF 2.0/GLB, b3dm, composite tiles containing supported models, and [code]KHR_draco_mesh_compression[/code]. Implicit tiling, i3dm, pnts, skinning, and unsupported required extensions report an error.
+		Tile transforms and source positions use double precision. Meshes are rebased before conversion to engine coordinates. glTF Y-up coordinates are converted to the tileset's Z-up frame before applying tile transforms. Options are copied when a loading session starts; call [method TiledMeshInstance3D.reload] after changing them.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="coordinate_system" type="int" setter="set_coordinate_system" getter="get_coordinate_system" enum="Tiles3DOptions.CoordinateSystem" default="0">
+			Determines the source-to-local coordinate frame. The default origin is the transformed root bounding volume center. Use [member TiledMeshInstance3D.world_origin_mode] to override the origin and [member TiledMeshInstance3D.unit_scale] to change units.
+		</member>
+		<member name="ion_asset_id" type="int" setter="set_ion_asset_id" getter="get_ion_asset_id" default="0">
+			Cesium ion 资产 ID。大于 0 时通过官方 endpoint 异步加载托管的 3DTILES，覆盖 [member TiledMeshInstance3D.source_uri]；0 保持普通本地/HTTP 加载。需同时设置 [member ion_access_token]。不支持地形、影像、外部供应商或隐式切片；资产 Token 过期后可调用 [method TiledMeshInstance3D.reload]，尚不自动刷新或展示 attribution。
+		</member>
+		<member name="ion_access_token" type="String" setter="set_ion_access_token" getter="get_ion_access_token" default="&quot;&quot;">
+			仅用于获取 ion endpoint 的用户访问 Token。建议运行时从环境变量注入并限制资产权限；密码显示不等于加密存储。返回的资产 Token 仅发送至同源 HTTPS 资产目录中的子资源，不发送至外部主机。不要提交真实 Token 到版本库。
+		</member>
+	</members>
+	<constants>
+		<constant name="COORDINATE_SYSTEM_AUTO" value="0" enum="CoordinateSystem">
+			Uses ECEF when the root bounding volume is a WGS84 region or its center is farther than 1,000,000 source units from zero; otherwise uses Cartesian Z-up. Override this heuristic for large Cartesian engineering datasets.
+		</constant>
+		<constant name="COORDINATE_SYSTEM_CARTESIAN" value="1" enum="CoordinateSystem">
+			Maps source [code](X, Y, Z)[/code] to Godot [code](X, Z, -Y)[/code].
+		</constant>
+		<constant name="COORDINATE_SYSTEM_ECEF" value="2" enum="CoordinateSystem">
+			Treats source positions as WGS84 Earth-centered, Earth-fixed meters. Local X points east, Y points up, and negative Z points north at the root center.
+		</constant>
+	</constants>
+</class>

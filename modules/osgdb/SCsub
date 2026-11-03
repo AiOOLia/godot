@@ -37,6 +37,7 @@ osg_sources += [source for source in Glob(thirdparty_dir + "src/osg/glu/libtess/
 osgdb_sources = Glob(thirdparty_dir + "src/osgDB/*.cpp")
 osgdb_sources += Glob(thirdparty_dir + "src/osgDB/serializers/osg/*.cpp")
 osgdb_sources += Glob(thirdparty_dir + "src/osgDB/readerwriters/osg/*.cpp")
+osgdb_sources += Glob(thirdparty_dir + "src/osgDB/deprecated-dotosg/osg/*.cpp")
 
 env_thirdparty.add_source_files(thirdparty_obj, osg_sources + osgdb_sources)
 env.modules_sources += thirdparty_obj
@@ -44,9 +45,6 @@ env.modules_sources += thirdparty_obj
 # Godot integration sources.
 module_obj = []
 env_osgdb.add_source_files(module_obj, "*.cpp")
-
-if env.editor_build:
-    env_osgdb.add_source_files(module_obj, "editor/*.cpp")
 
 env.modules_sources += module_obj
 

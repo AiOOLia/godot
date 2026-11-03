@@ -1,0 +1,19 @@
+#!/usr/bin/env python
+from misc.utility.scons_hints import *
+
+Import("env")
+Import("env_modules")
+
+env_usd = env_modules.Clone()
+env_usd.Prepend(CPPPATH=[env["USD_INCLUDE_PATH"]])
+# USD uses exceptions; do not change exception settings for other modules.
+if env.msvc:
+    env_usd["CPPDEFINES"] = [d for d in env_usd["CPPDEFINES"] if not (isinstance(d, (tuple, list)) and d[0] == "_HAS_EXCEPTIONS")]
+    env_usd.AppendUnique(CXXFLAGS=["/EHsc"])
+else:
+    env_usd["CXXFLAGS"] = [f for f in env_usd["CXXFLAGS"] if f != "-fno-exceptions"]
+    env_usd.AppendUnique(CXXFLAGS=["-fexceptions"])
+
+# Libraries must reach the final executable, not only the module clone.
+env.AppendUnique(LIBS=[env.File(env["USD_LIBRARY"])])
+env_usd.add_source_files(env.modules_sources, "*.cpp")

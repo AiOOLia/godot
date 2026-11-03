@@ -30,61 +30,41 @@
 
 #include "register_types.h"
 
-#include "osg_data_request_queue.h"
-#include "osg_image_decode_queue.h"
 #include "osg_parse_queue.h"
 #include "osg_static_init.h"
-#include "tiled_mesh_instance_3d.h"
-#include "tiled_origin_controller_3d.h"
+#include "osg_tiled_mesh_format.h"
 
 #include "core/object/class_db.h"
 
-#ifdef TOOLS_ENABLED
-#include "editor/tiled_mesh_instance_3d_editor_plugin.h"
-#include "editor/plugins/editor_plugin.h"
-#endif
+#include "modules/tiled_mesh_3d/tiled_mesh_format_registry.h"
 
 static OsgParseQueue *osg_parse_queue = nullptr;
-static OsgImageDecodeQueue *osg_image_decode_queue = nullptr;
-static OsgDataRequestQueue *osg_data_request_queue = nullptr;
+static OsgTiledMeshFormatLoader *osg_tiled_mesh_format_loader = nullptr;
 
 void initialize_osgdb_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
 		osgdb_initialize_static_registry();
-		osg_data_request_queue = memnew(OsgDataRequestQueue);
 		osg_parse_queue = memnew(OsgParseQueue);
-		osg_image_decode_queue = memnew(OsgImageDecodeQueue);
 		if (osg_parse_queue->start() != OK) {
 			ERR_PRINT("OSGDB: Unable to start the serial parser thread.");
 		}
-		if (osg_image_decode_queue->start() != OK) {
-			ERR_PRINT("OSGDB: Unable to start the image decoder thread.");
-		}
-		GDREGISTER_CLASS(TiledMeshInstance3D);
-		GDREGISTER_CLASS(TiledOriginController3D);
+		GDREGISTER_CLASS(OsgTiledMeshOptions);
+		osg_tiled_mesh_format_loader = memnew(OsgTiledMeshFormatLoader);
+		TiledMeshFormatRegistry::register_loader(osg_tiled_mesh_format_loader);
 	}
-#ifdef TOOLS_ENABLED
-	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
-		GDREGISTER_VIRTUAL_CLASS(TiledMeshInstance3DEditorPlugin);
-		EditorPlugins::add_by_type<TiledMeshInstance3DEditorPlugin>();
-	}
-#endif
 }
 
 void uninitialize_osgdb_module(ModuleInitializationLevel p_level) {
 	if (p_level != MODULE_INITIALIZATION_LEVEL_SCENE) {
 		return;
 	}
+	if (osg_tiled_mesh_format_loader) {
+		TiledMeshFormatRegistry::unregister_loader(osg_tiled_mesh_format_loader);
+		memdelete(osg_tiled_mesh_format_loader);
+		osg_tiled_mesh_format_loader = nullptr;
+	}
 	if (osg_parse_queue) {
 		memdelete(osg_parse_queue);
 		osg_parse_queue = nullptr;
-	}
-	if (osg_image_decode_queue) {
-		memdelete(osg_image_decode_queue);
-		osg_image_decode_queue = nullptr;
-	}
-	if (osg_data_request_queue) {
-		memdelete(osg_data_request_queue);
-		osg_data_request_queue = nullptr;
 	}
 }

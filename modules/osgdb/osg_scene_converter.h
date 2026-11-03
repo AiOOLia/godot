@@ -30,16 +30,16 @@
 
 #pragma once
 
-#include "osg_tile_document.h"
+#include "modules/tiled_mesh_3d/tiled_mesh_format.h"
 
 struct OsgSceneConvertOptions {
 	bool osg_z_up = true;
 	double unit_scale = 1.0;
 	bool use_root_center = true;
-	OsgVector3d explicit_origin;
+	TiledMeshVector3d explicit_origin;
 };
 
 class OsgSceneConverter {
 public:
-	static Error parse_bytes(const PackedByteArray &p_bytes, const String &p_source_uri, const OsgSceneConvertOptions &p_options, OsgTileDocument &r_document, String &r_error);
+	static Error parse_bytes(const PackedByteArray &p_bytes, const String &p_source_uri, const OsgSceneConvertOptions &p_options, TiledMeshDocument &r_document, String &r_error);
 };

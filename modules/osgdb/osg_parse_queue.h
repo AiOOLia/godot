@@ -51,7 +51,7 @@ public:
 		String source_uri;
 		Error error = OK;
 		String error_message;
-		OsgTileDocument document;
+		TiledMeshDocument document;
 	};
 
 private:

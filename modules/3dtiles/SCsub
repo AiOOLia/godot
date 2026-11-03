@@ -1,0 +1,16 @@
+#!/usr/bin/env python
+
+Import("env")
+Import("env_modules")
+
+env_3dtiles = env_modules.Clone()
+env_3dtiles.add_source_files(env.modules_sources, "*.cpp")
+env_3dtiles.add_source_files(env.modules_sources, "parser/tiles_3d_decoder.cpp")
+env_3dtiles.add_source_files(env.modules_sources, "parser/content_parser.cpp")
+env_3dtiles.add_source_files(env.modules_sources, "parser/tiles_3d_parser.cpp")
+env_3dtiles.add_source_files(env.modules_sources, "parser/tileset/tileset_parser.cpp")
+env_3dtiles.add_source_files(env.modules_sources, "parser/cmpt/cmpt_parser.cpp")
+env_3dtiles.add_source_files(env.modules_sources, "parser/b3dm/b3dm_parser.cpp")
+env_3dtiles.add_source_files(env.modules_sources, "parser/i3dm/i3dm_parser.cpp")
+env_3dtiles.add_source_files(env.modules_sources, "parser/pnts/pnts_parser.cpp")
+env_3dtiles.add_source_files(env.modules_sources, "parser/gltf/gltf_parser.cpp")

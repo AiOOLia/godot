@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="OsgTiledMeshOptions" inherits="TiledMeshFormatOptions" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Controls OpenSceneGraph tiled mesh conversion.
+	</brief_description>
+	<description>
+		Options used by the [code]osg[/code] tiled mesh adapter. The adapter recognizes [code].osg[/code] and [code].osgb[/code], preserves PagedLOD and ProxyNode replacement groups, and serializes all OSG parsing through one worker.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="up_axis" type="int" setter="set_up_axis" getter="get_up_axis" enum="OsgTiledMeshOptions.UpAxis" default="0">
+			Source up axis.
+		</member>
+	</members>
+	<constants>
+		<constant name="UP_AXIS_Z" value="0" enum="UpAxis">
+			Maps OSG [code](X, Y, Z)[/code] to Godot [code](X, Z, -Y)[/code].
+		</constant>
+		<constant name="UP_AXIS_Y" value="1" enum="UpAxis">
+			Keeps source axes unchanged.
+		</constant>
+	</constants>
+</class>

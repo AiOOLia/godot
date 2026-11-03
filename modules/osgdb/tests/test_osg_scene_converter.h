@@ -37,15 +37,9 @@
 #define OSGDB_LIBRARY_STATIC
 #endif
 
-#include "tests/test_macros.h"
-
 #include "../osg_parse_queue.h"
-#include "../osg_data_request_queue.h"
-#include "../osg_data_source.h"
-#include "../osg_image_decode_queue.h"
 #include "../osg_scene_converter.h"
 #include "../osg_static_init.h"
-#include "../tiled_mesh_instance_3d.h"
 
 #include "core/io/file_access.h"
 #include "core/io/tcp_server.h"
@@ -53,8 +47,20 @@
 #include "scene/3d/camera_3d.h"
 #include "scene/main/scene_tree.h"
 #include "tests/signal_watcher.h"
+#include "tests/test_macros.h"
 #include "tests/test_utils.h"
 
+#include "modules/tiled_mesh_3d/tiled_mesh_data_request_queue.h"
+#include "modules/tiled_mesh_3d/tiled_mesh_data_source.h"
+#include "modules/tiled_mesh_3d/tiled_mesh_image_decode_queue.h"
+#include "modules/tiled_mesh_3d/tiled_mesh_instance_3d.h"
+
+#include <osgDB/Options.h>
+#include <osgDB/ReaderWriter.h>
+#include <osgDB/Registry.h>
+
+#include <cstring>
+#include <limits>
 #include <osg/Geode>
 #include <osg/Geometry>
 #include <osg/LOD>
@@ -62,12 +68,6 @@
 #include <osg/MatrixTransform>
 #include <osg/PagedLOD>
 #include <osg/Texture2D>
-#include <osgDB/Options.h>
-#include <osgDB/ReaderWriter.h>
-#include <osgDB/Registry.h>
-
-#include <cstring>
-#include <limits>
 #include <sstream>
 
 namespace TestOsgdb {
@@ -164,7 +164,7 @@ static void check_converted_scene(const PackedByteArray &p_bytes, const String &
 	options.osg_z_up = true;
 	options.unit_scale = 1.0;
 	options.use_root_center = true;
-	OsgTileDocument document;
+	TiledMeshDocument document;
 	String error;
 	const Error parse_error = OsgSceneConverter::parse_bytes(p_bytes, p_uri, options, document, error);
 	const std::string error_utf8 = error.utf8().get_data();
@@ -191,15 +191,39 @@ static void check_converted_scene(const PackedByteArray &p_bytes, const String &
 	CHECK(document.materials[0].double_sided);
 	CHECK(document.materials[0].albedo.is_equal_approx(Color(0.25, 0.5, 0.75, 0.5)));
 	CHECK(document.materials[0].albedo_image.uri == "res://city/textures/albedo.png");
-	REQUIRE(document.external_tiles.size() == (p_expect_paged_lod ? 1 : 0));
+	REQUIRE(document.tiles.size() == (p_expect_paged_lod ? 1 : 0));
 	if (p_expect_paged_lod) {
-		CHECK(document.external_tiles[0].uri == "res://city/child.osgb");
+		REQUIRE(document.tiles[0].contents.size() == 1);
+		CHECK(document.tiles[0].contents[0].uri == "res://city/child.osgb");
 	}
 }
 
 TEST_CASE("[OSGDB] Convert OSG2 ASCII through the .osg compatibility path") {
 	osg::ref_ptr<osg::Node> scene = make_test_scene(false);
 	check_converted_scene(write_test_scene(*scene, true, false), "res://city/root.osg", false);
+}
+
+TEST_CASE("[OSGDB] Convert traditional OSG and defer external images and ProxyNode children") {
+	osg::ref_ptr<osg::Node> scene = make_test_scene();
+	osgdb_initialize_static_registry();
+	osgDB::ReaderWriter *writer = osgDB::Registry::instance()->getReaderWriterForExtension("osg");
+	REQUIRE(writer != nullptr);
+	std::ostringstream output;
+	REQUIRE(writer->writeNode(*scene, output).success());
+	const std::string bytes = output.str();
+	PackedByteArray packed;
+	packed.resize(bytes.size());
+	memcpy(packed.ptrw(), bytes.data(), bytes.size());
+	check_converted_scene(packed, "res://city/root.osg");
+
+	OsgSceneConvertOptions options;
+	TiledMeshDocument document;
+	String error;
+	const String proxy = "ProxyNode { ExtRefMode LOAD_IMMEDIATELY FileNameList 1 { missing.osgb } }";
+	REQUIRE(OsgSceneConverter::parse_bytes(proxy.to_utf8_buffer(), "res://city/root.osg", options, document, error) == OK);
+	REQUIRE(document.tiles.size() == 1);
+	CHECK(document.surfaces.is_empty());
+	CHECK(document.tiles[0].contents[0].uri == "res://city/missing.osgb");
 }
 
 TEST_CASE("[OSGDB] Recover from an empty inline image in an ASCII stream") {
@@ -213,6 +237,34 @@ TEST_CASE("[OSGDB] Recover from an empty inline image in an ASCII stream") {
 TEST_CASE("[OSGDB] Convert uncompressed OSGB") {
 	osg::ref_ptr<osg::Node> scene = make_test_scene();
 	check_converted_scene(write_test_scene(*scene, false, false), "res://city/root.osgb");
+}
+
+TEST_CASE("[OSGDB] Empty container tiles succeed but unsupported and truncated scenes still fail") {
+	osg::ref_ptr<osg::Group> root = new osg::Group;
+	root->getOrCreateStateSet()->setMode(GL_CULL_FACE, osg::StateAttribute::ON);
+	root->addChild(new osg::Group);
+	root->addChild(new osg::Geode);
+	OsgSceneConvertOptions options;
+	TiledMeshDocument document;
+	String error;
+	for (int mode = 0; mode < 3; mode++) {
+		const PackedByteArray bytes = write_test_scene(*root, mode == 0, mode == 2);
+		REQUIRE(OsgSceneConverter::parse_bytes(bytes, mode == 0 ? "res://empty.osg" : "res://empty.osgb", options, document, error) == OK);
+		CHECK(document.surfaces.is_empty());
+		CHECK(document.tiles.is_empty());
+		CHECK(document.materials.is_empty());
+		CHECK(document.estimated_cpu_bytes == 0);
+		if (mode == 1) {
+			CHECK(OsgSceneConverter::parse_bytes(bytes.slice(0, bytes.size() / 2), "res://truncated.osgb", options, document, error) != OK);
+		}
+	}
+	osg::ref_ptr<osg::Geometry> points = new osg::Geometry;
+	osg::ref_ptr<osg::Vec3Array> vertices = new osg::Vec3Array;
+	vertices->push_back(osg::Vec3(0, 0, 0));
+	points->setVertexArray(vertices);
+	points->addPrimitiveSet(new osg::DrawArrays(GL_POINTS, 0, 1));
+	root->addChild(points);
+	CHECK(OsgSceneConverter::parse_bytes(write_test_scene(*root, false, false), "res://unsupported.osgb", options, document, error) == ERR_FILE_CORRUPT);
 }
 
 TEST_CASE("[OSGDB] Convert zlib-compressed OSGB") {
@@ -229,12 +281,12 @@ TEST_CASE("[OSGDB] Derive bounds for a paging-only root") {
 	paging_root->setFileName(0, "tiles/root.osgb");
 	OsgSceneConvertOptions options;
 	options.use_root_center = true;
-	OsgTileDocument document;
+	TiledMeshDocument document;
 	String error;
 	const Error parse_error = OsgSceneConverter::parse_bytes(write_test_scene(*paging_root, false, false), "res://city/index.osgb", options, document, error);
 	REQUIRE_MESSAGE(parse_error == OK, error.utf8().get_data());
 	REQUIRE(document.surfaces.is_empty());
-	REQUIRE(document.external_tiles.size() == 1);
+	REQUIRE(document.tiles.size() == 1);
 	CHECK(Math::is_equal_approx(document.source_origin.x, 100.0));
 	CHECK(Math::is_equal_approx(document.source_origin.y, 200.0));
 	CHECK(Math::is_equal_approx(document.source_origin.z, 300.0));
@@ -256,7 +308,7 @@ TEST_CASE("[OSGDB] Unsupported primitives do not affect dataset bounds") {
 
 	OsgSceneConvertOptions options;
 	options.use_root_center = true;
-	OsgTileDocument document;
+	TiledMeshDocument document;
 	String error;
 	const Error parse_error = OsgSceneConverter::parse_bytes(write_test_scene(*root, false, false), "res://city/root.osgb", options, document, error);
 	REQUIRE_MESSAGE(parse_error == OK, error.utf8().get_data());
@@ -280,17 +332,17 @@ TEST_CASE("[OSGDB] Preserve independent PagedLOD fallback groups") {
 		root->addChild(paged.get());
 	}
 	OsgSceneConvertOptions options;
-	OsgTileDocument document;
+	TiledMeshDocument document;
 	String error;
 	const Error parse_error = OsgSceneConverter::parse_bytes(write_test_scene(*root, false, false), "res://city/root.osgb", options, document, error);
 	REQUIRE_MESSAGE(parse_error == OK, error.utf8().get_data());
 	REQUIRE(document.surfaces.size() == 2);
-	REQUIRE(document.external_tiles.size() == 2);
-	CHECK(document.surfaces[0].fallback_group >= 0);
-	CHECK(document.surfaces[1].fallback_group >= 0);
-	CHECK(document.surfaces[0].fallback_group != document.surfaces[1].fallback_group);
-	CHECK(document.external_tiles[0].fallback_group == document.surfaces[0].fallback_group);
-	CHECK(document.external_tiles[1].fallback_group == document.surfaces[1].fallback_group);
+	REQUIRE(document.tiles.size() == 2);
+	CHECK(document.surfaces[0].replacement_group >= 0);
+	CHECK(document.surfaces[1].replacement_group >= 0);
+	CHECK(document.surfaces[0].replacement_group != document.surfaces[1].replacement_group);
+	CHECK(document.tiles[0].replacement_group == document.surfaces[0].replacement_group);
+	CHECK(document.tiles[1].replacement_group == document.surfaces[1].replacement_group);
 }
 
 TEST_CASE("[OSGDB] Preserve inline LOD child ranges") {
@@ -302,7 +354,7 @@ TEST_CASE("[OSGDB] Preserve inline LOD child ranges") {
 	lod->addChild(make_test_scene(false, true, false).get(), 10.0f, 1000.0f);
 
 	OsgSceneConvertOptions options;
-	OsgTileDocument document;
+	TiledMeshDocument document;
 	String error;
 	const Error parse_error = OsgSceneConverter::parse_bytes(write_test_scene(*lod, false, false), "res://city/inline_lod.osgb", options, document, error);
 	REQUIRE_MESSAGE(parse_error == OK, error.utf8().get_data());
@@ -311,10 +363,10 @@ TEST_CASE("[OSGDB] Preserve inline LOD child ranges") {
 	CHECK(document.surfaces[0].lod_branch >= 0);
 	CHECK(document.surfaces[1].lod_branch >= 0);
 	CHECK(document.surfaces[0].lod_branch != document.surfaces[1].lod_branch);
-	CHECK(Math::is_equal_approx(document.lod_ranges[document.surfaces[0].lod_branch].min_range, 0.0f));
-	CHECK(Math::is_equal_approx(document.lod_ranges[document.surfaces[0].lod_branch].max_range, 10.0f));
-	CHECK(Math::is_equal_approx(document.lod_ranges[document.surfaces[1].lod_branch].min_range, 10.0f));
-	CHECK(Math::is_equal_approx(document.lod_ranges[document.surfaces[1].lod_branch].max_range, 1000.0f));
+	CHECK(Math::is_equal_approx(document.lod_ranges[document.surfaces[0].lod_branch].selection.minimum, 0.0));
+	CHECK(Math::is_equal_approx(document.lod_ranges[document.surfaces[0].lod_branch].selection.maximum, 10.0));
+	CHECK(Math::is_equal_approx(document.lod_ranges[document.surfaces[1].lod_branch].selection.minimum, 10.0));
+	CHECK(Math::is_equal_approx(document.lod_ranges[document.surfaces[1].lod_branch].selection.maximum, 1000.0));
 }
 
 TEST_CASE("[OSGDB] Preserve winding in native Godot Y-up mode") {
@@ -323,7 +375,7 @@ TEST_CASE("[OSGDB] Preserve winding in native Godot Y-up mode") {
 	OsgSceneConvertOptions options;
 	options.osg_z_up = false;
 	options.use_root_center = true;
-	OsgTileDocument document;
+	TiledMeshDocument document;
 	String error;
 	const Error parse_error = OsgSceneConverter::parse_bytes(bytes, "res://city/root.osgb", options, document, error);
 	const std::string error_utf8 = error.utf8().get_data();
@@ -348,7 +400,7 @@ TEST_CASE("[OSGDB] Preserve explicit face culling over the two-sided OpenGL defa
 
 	OsgSceneConvertOptions options;
 	options.use_root_center = true;
-	OsgTileDocument document;
+	TiledMeshDocument document;
 	String error;
 	REQUIRE(OsgSceneConverter::parse_bytes(write_test_scene(*scene, false, false), "res://culled.osgb", options, document, error) == OK);
 	REQUIRE(document.materials.size() == 1);
@@ -361,7 +413,7 @@ TEST_CASE("[OSGDB] Merge geometry with compatible material and LOD ownership") {
 	root->addChild(make_test_scene(false, false, false).get());
 
 	OsgSceneConvertOptions options;
-	OsgTileDocument document;
+	TiledMeshDocument document;
 	String error;
 	REQUIRE(OsgSceneConverter::parse_bytes(write_test_scene(*root, false, false), "res://merged.osgb", options, document, error) == OK);
 	REQUIRE(document.materials.size() == 1);
@@ -401,11 +453,11 @@ TEST_CASE("[OSGDB] Serial parse queue publishes a CPU-only result") {
 	CHECK(result.generation == generation);
 	CHECK_MESSAGE(result.error == OK, result.error_message.utf8().get_data());
 	CHECK(result.document.surfaces.size() == 1);
-	CHECK(result.document.external_tiles.is_empty());
+	CHECK(result.document.tiles.is_empty());
 }
 
 TEST_CASE("[OSGDB] External images decode away from the main thread") {
-	OsgImageDecodeQueue *queue = OsgImageDecodeQueue::get_singleton();
+	TiledMeshImageDecodeQueue *queue = TiledMeshImageDecodeQueue::get_singleton();
 	REQUIRE(queue != nullptr);
 	Ref<Image> source = Image::create_empty(2, 2, false, Image::FORMAT_RGBA8);
 	source->fill(Color(0.25, 0.5, 0.75, 1.0));
@@ -415,7 +467,7 @@ TEST_CASE("[OSGDB] External images decode away from the main thread") {
 	const uint64_t request_id = queue->enqueue(owner, 41, "res://texture.png", png);
 	REQUIRE(request_id != 0);
 
-	OsgImageDecodeQueue::Result result;
+	TiledMeshImageDecodeQueue::Result result;
 	bool completed = false;
 	for (int i = 0; i < 5000 && !completed; i++) {
 		completed = queue->take_result(request_id, result);
@@ -438,7 +490,7 @@ TEST_CASE("[OSGDB] HTTP data requests are non-blocking and coalesced") {
 	const int port = server->get_local_port();
 	REQUIRE(port > 0);
 
-	OsgDataRequestQueue *queue = OsgDataRequestQueue::get_singleton();
+	TiledMeshDataRequestQueue *queue = TiledMeshDataRequestQueue::get_singleton();
 	REQUIRE(queue != nullptr);
 	const String uri = vformat("http://127.0.0.1:%d/root.osgb", port);
 	const ObjectID owner_a(uint64_t(1001));
@@ -452,8 +504,8 @@ TEST_CASE("[OSGDB] HTTP data requests are non-blocking and coalesced") {
 	Ref<StreamPeerTCP> connection;
 	int accepted_connections = 0;
 	bool response_sent = false;
-	OsgDataRequestQueue::Result result_a;
-	OsgDataRequestQueue::Result result_b;
+	TiledMeshDataRequestQueue::Result result_a;
+	TiledMeshDataRequestQueue::Result result_b;
 	bool completed_a = false;
 	bool completed_b = false;
 	for (int i = 0; i < 5000 && (!completed_a || !completed_b); i++) {
@@ -496,17 +548,17 @@ TEST_CASE("[OSGDB] HTTP data requests follow relative redirects") {
 	REQUIRE(server->listen(0, IPAddress("127.0.0.1")) == OK);
 	const int port = server->get_local_port();
 
-	OsgDataRequestQueue *queue = OsgDataRequestQueue::get_singleton();
+	TiledMeshDataRequestQueue *queue = TiledMeshDataRequestQueue::get_singleton();
 	REQUIRE(queue != nullptr);
 	const String uri = vformat("http://127.0.0.1:%d/root.osgb", port);
-	CHECK(OsgDataSource::resolve_uri(uri, "/redirected.osgb") == vformat("http://127.0.0.1:%d/redirected.osgb", port));
+	CHECK(TiledMeshDataSource::resolve_uri(uri, "/redirected.osgb") == vformat("http://127.0.0.1:%d/redirected.osgb", port));
 	const uint64_t request_id = queue->request(ObjectID(uint64_t(1003)), 13, uri, 1024, 2.0, 0);
 	REQUIRE(request_id != 0);
 
 	const PackedByteArray expected = String("redirected-osgdb-payload").to_utf8_buffer();
 	Ref<StreamPeerTCP> connection;
 	int responses_sent = 0;
-	OsgDataRequestQueue::Result result;
+	TiledMeshDataRequestQueue::Result result;
 	bool completed = false;
 	for (int i = 0; i < 5000 && !completed; i++) {
 		queue->poll();
@@ -699,6 +751,77 @@ TEST_CASE("[OSGDB][SceneTree] Local PagedLOD keeps its parent visible until the 
 	memdelete(camera);
 }
 
+TEST_CASE("[OSGDB][SceneTree] Nested PagedLOD refinement hides every ancestor fallback") {
+	osg::ref_ptr<osg::Node> root_fallback = make_test_scene(false, false, false)->asGroup()->getChild(0);
+	osg::ref_ptr<osg::Node> child_fallback = make_test_scene(false, false, false)->asGroup()->getChild(0);
+	osg::ref_ptr<osg::Node> grandchild_geometry = make_test_scene(false, false, false)->asGroup()->getChild(0);
+
+	osg::ref_ptr<osg::PagedLOD> root_scene = new osg::PagedLOD;
+	root_scene->setCenter(osg::Vec3d(0.5, 0.5, 0.0));
+	root_scene->setRadius(2.0f);
+	root_scene->setRangeMode(osg::LOD::DISTANCE_FROM_EYE_POINT);
+	root_scene->addChild(root_fallback.get(), 0.0f, 1000.0f);
+	root_scene->setFileName(1, "nested_paged_child.osgb");
+	root_scene->setRange(1, 0.0f, 1000.0f);
+
+	osg::ref_ptr<osg::PagedLOD> child_scene = new osg::PagedLOD;
+	child_scene->setCenter(osg::Vec3d(0.5, 0.5, 0.0));
+	child_scene->setRadius(2.0f);
+	child_scene->setRangeMode(osg::LOD::DISTANCE_FROM_EYE_POINT);
+	child_scene->addChild(child_fallback.get(), 0.0f, 1000.0f);
+	child_scene->setFileName(1, "nested_paged_grandchild.osgb");
+	child_scene->setRange(1, 0.0f, 1000.0f);
+
+	const String root_path = TestUtils::get_temp_path("osgdb_nested_paged_root.osgb");
+	const String child_path = TestUtils::get_temp_path("nested_paged_child.osgb");
+	const String grandchild_path = TestUtils::get_temp_path("nested_paged_grandchild.osgb");
+	Ref<FileAccess> root_file = FileAccess::open(root_path, FileAccess::WRITE);
+	REQUIRE(root_file.is_valid());
+	root_file->store_buffer(write_test_scene(*root_scene, false, false));
+	root_file.unref();
+	Ref<FileAccess> child_file = FileAccess::open(child_path, FileAccess::WRITE);
+	REQUIRE(child_file.is_valid());
+	child_file->store_buffer(write_test_scene(*child_scene, false, false));
+	child_file.unref();
+	Ref<FileAccess> grandchild_file = FileAccess::open(grandchild_path, FileAccess::WRITE);
+	REQUIRE(grandchild_file.is_valid());
+	grandchild_file->store_buffer(write_test_scene(*grandchild_geometry, false, false));
+	grandchild_file.unref();
+
+	Camera3D *camera = memnew(Camera3D);
+	camera->set_position(Vector3(0, 0, 10));
+	SceneTree::get_singleton()->get_root()->add_child(camera);
+	camera->make_current();
+	TiledMeshInstance3D *node = memnew(TiledMeshInstance3D);
+	node->set_auto_load(false);
+	node->set_world_origin_mode(TiledMeshInstance3D::WORLD_ORIGIN_EXPLICIT);
+	node->set_world_origin(0.0, 0.0, 0.0);
+	node->set_source_uri(root_path);
+	SceneTree::get_singleton()->get_root()->add_child(node);
+	REQUIRE(node->open() == OK);
+
+	bool complete = false;
+	for (int i = 0; i < 5000 && !complete; i++) {
+		SceneTree::get_singleton()->process(0.001);
+		const Dictionary stats = node->get_streaming_stats();
+		complete = int(stats["known_tiles"]) == 3 && int(stats["resident_tiles"]) == 3;
+		if (!complete) {
+			OS::get_singleton()->delay_usec(1000);
+		}
+	}
+	REQUIRE(complete);
+	SceneTree::get_singleton()->process(0.001);
+	const Dictionary stats = node->get_streaming_stats();
+	CHECK(int(stats["resident_render_instances"]) == 3);
+	CHECK(int(stats["hidden_fallback_surfaces"]) == 2);
+	CHECK(int(stats["visible_render_instances"]) == 1);
+
+	SceneTree::get_singleton()->get_root()->remove_child(node);
+	memdelete(node);
+	SceneTree::get_singleton()->get_root()->remove_child(camera);
+	memdelete(camera);
+}
+
 TEST_CASE("[OSGDB][SceneTree] External detail is requested only inside its authored LOD range") {
 	osg::ref_ptr<osg::Node> fallback_geometry = make_test_scene(false, false, false)->asGroup()->getChild(0);
 	osg::ref_ptr<osg::Node> child_geometry = make_test_scene(false, false, false)->asGroup()->getChild(0);
@@ -838,7 +961,7 @@ TEST_CASE("[OSGDB][SceneTree] The largest visual contribution is refined first")
 	REQUIRE(first_child_resident);
 	Array expected_signals;
 	Array expected_args;
-	expected_args.push_back(OsgDataSource::normalize_uri(large_path));
+	expected_args.push_back(TiledMeshDataSource::normalize_uri(large_path));
 	expected_signals.push_back(expected_args);
 	SIGNAL_CHECK("tile_loaded", expected_signals);
 	SIGNAL_UNWATCH(node, "tile_loaded");
@@ -1353,6 +1476,81 @@ TEST_CASE("[OSGDB][SceneTree] A resident refinement preserves unconditional sibl
 	memdelete(camera);
 }
 
+TEST_CASE("[OSGDB][SceneTree] An off-screen PagedLOD group does not keep a broader ancestor fallback visible") {
+	osg::ref_ptr<osg::PagedLOD> root_scene = new osg::PagedLOD;
+	root_scene->setCenter(osg::Vec3d(0.5, 0.0, 0.0));
+	root_scene->setRadius(2.0f);
+	root_scene->setRangeMode(osg::LOD::DISTANCE_FROM_EYE_POINT);
+	root_scene->addChild(make_test_scene(false, false, false)->asGroup()->getChild(0), 0.0f, 1000.0f);
+	root_scene->setFileName(1, "offscreen_group_child.osgb");
+	root_scene->setRange(1, 0.0f, 1000.0f);
+
+	osg::ref_ptr<osg::Group> child_scene = new osg::Group;
+	osg::ref_ptr<osg::PagedLOD> visible_group = new osg::PagedLOD;
+	visible_group->setCenter(osg::Vec3d(0.5, 0.0, 0.0));
+	visible_group->setRadius(2.0f);
+	visible_group->setRangeMode(osg::LOD::DISTANCE_FROM_EYE_POINT);
+	visible_group->addChild(make_test_scene(false, false, false)->asGroup()->getChild(0), 0.0f, 1000.0f);
+	visible_group->setFileName(1, "inactive_visible_detail.osgb");
+	visible_group->setRange(1, 2000.0f, 3000.0f);
+	child_scene->addChild(visible_group.get());
+
+	osg::ref_ptr<osg::MatrixTransform> offscreen_fallback = new osg::MatrixTransform;
+	offscreen_fallback->setMatrix(osg::Matrixd::translate(100.0, 0.0, 0.0));
+	offscreen_fallback->addChild(make_test_scene(false, false, false)->asGroup()->getChild(0));
+	osg::ref_ptr<osg::PagedLOD> offscreen_group = new osg::PagedLOD;
+	offscreen_group->setCenter(osg::Vec3d(100.5, 0.0, 0.0));
+	offscreen_group->setRadius(2.0f);
+	offscreen_group->setRangeMode(osg::LOD::DISTANCE_FROM_EYE_POINT);
+	offscreen_group->addChild(offscreen_fallback.get(), 0.0f, 5.0f);
+	offscreen_group->setFileName(1, "offscreen_detail.osgb");
+	offscreen_group->setRange(1, 5.0f, 1000.0f);
+	child_scene->addChild(offscreen_group.get());
+
+	const String root_path = TestUtils::get_temp_path("osgdb_offscreen_group_root.osgb");
+	const String child_path = TestUtils::get_temp_path("offscreen_group_child.osgb");
+	Ref<FileAccess> root_file = FileAccess::open(root_path, FileAccess::WRITE);
+	REQUIRE(root_file.is_valid());
+	root_file->store_buffer(write_test_scene(*root_scene, false, false));
+	root_file.unref();
+	Ref<FileAccess> child_file = FileAccess::open(child_path, FileAccess::WRITE);
+	REQUIRE(child_file.is_valid());
+	child_file->store_buffer(write_test_scene(*child_scene, false, false));
+	child_file.unref();
+
+	Camera3D *camera = memnew(Camera3D);
+	camera->set_position(Vector3(0, 0, 10));
+	SceneTree::get_singleton()->get_root()->add_child(camera);
+	camera->make_current();
+	TiledMeshInstance3D *node = memnew(TiledMeshInstance3D);
+	node->set_auto_load(false);
+	node->set_retry_count(0);
+	node->set_source_uri(root_path);
+	SceneTree::get_singleton()->get_root()->add_child(node);
+	REQUIRE(node->open() == OK);
+
+	bool child_resident = false;
+	for (int i = 0; i < 5000 && !child_resident; i++) {
+		SceneTree::get_singleton()->process(0.001);
+		child_resident = int(node->get_streaming_stats()["resident_tiles"]) == 2;
+		if (!child_resident) {
+			OS::get_singleton()->delay_usec(1000);
+		}
+	}
+	REQUIRE(child_resident);
+	SceneTree::get_singleton()->process(0.001);
+	const Dictionary stats = node->get_streaming_stats();
+	CHECK(int(stats["failed_tiles"]) == 0);
+	CHECK(int(stats["resident_render_instances"]) == 3);
+	CHECK(int(stats["visible_render_instances"]) == 1);
+	CHECK(int(stats["hidden_fallback_surfaces"]) == 1);
+
+	SceneTree::get_singleton()->get_root()->remove_child(node);
+	memdelete(node);
+	SceneTree::get_singleton()->get_root()->remove_child(camera);
+	memdelete(camera);
+}
+
 TEST_CASE("[OSGDB][SceneTree] Tiled node loads an OSGB root over HTTP") {
 	osg::ref_ptr<osg::Node> scene = make_test_scene(false, true, false);
 	const PackedByteArray osgb = write_test_scene(*scene, false, false);
@@ -1399,5 +1597,4 @@ TEST_CASE("[OSGDB][SceneTree] Tiled node loads an OSGB root over HTTP") {
 	memdelete(node);
 	server->stop();
 }
-
 } // namespace TestOsgdb

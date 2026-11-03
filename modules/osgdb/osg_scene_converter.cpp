@@ -30,8 +30,14 @@
 
 #include "osg_scene_converter.h"
 
-#include "osg_data_source.h"
+#include "modules/tiled_mesh_3d/tiled_mesh_data_source.h"
 
+#include <osgDB/Options.h>
+#include <osgDB/ReaderWriter.h>
+#include <osgDB/Registry.h>
+
+#include <cmath>
+#include <limits>
 #include <osg/AlphaFunc>
 #include <osg/Array>
 #include <osg/Geode>
@@ -45,17 +51,58 @@
 #include <osg/StateSet>
 #include <osg/Texture2D>
 #include <osg/Transform>
-#include <osgDB/Options.h>
-#include <osgDB/ReaderWriter.h>
-#include <osgDB/Registry.h>
-
-#include <cmath>
-#include <limits>
 #include <set>
-#include <sstream>
+#include <istream>
+#include <streambuf>
 #include <vector>
 
+#ifdef WINDOWS_ENABLED
+#include <windows.h>
+#endif
+
 namespace {
+
+static String osg_path_to_string(const std::string &p_path) {
+#ifdef WINDOWS_ENABLED
+	// Legacy Windows .osg exporters used the active ANSI code page (e.g. GBK).
+	// Keep UTF-8 paths intact and only fall back when UTF-8 validation fails.
+	if (!p_path.empty() && MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, p_path.data(), p_path.size(), nullptr, 0) == 0) {
+		const int size = MultiByteToWideChar(CP_ACP, 0, p_path.data(), p_path.size(), nullptr, 0);
+		if (size > 0) {
+			std::wstring path(size, L'\0');
+			MultiByteToWideChar(CP_ACP, 0, p_path.data(), p_path.size(), path.data(), size);
+			return String::utf16(reinterpret_cast<const char16_t *>(path.data()), size);
+		}
+	}
+#endif
+	return String::utf8(p_path.c_str());
+}
+
+// Keep external file access in the bounded, cancellable Godot queues. Legacy
+// wrappers otherwise try to synchronously load images and ProxyNode children.
+class DeferredOsgResources : public osgDB::ReadFileCallback {
+public:
+	osgDB::ReaderWriter::ReadResult readImage(const std::string &p_filename, const osgDB::Options *) override {
+		osg::ref_ptr<osg::Image> image = new osg::Image;
+		image->setFileName(p_filename);
+		return image.get();
+	}
+	osgDB::ReaderWriter::ReadResult readNode(const std::string &, const osgDB::Options *) override {
+		return osgDB::ReaderWriter::ReadResult::FILE_LOADED;
+	}
+	osgDB::ReaderWriter::ReadResult readObject(const std::string &, const osgDB::Options *) override {
+		return osgDB::ReaderWriter::ReadResult::FILE_LOADED;
+	}
+	osgDB::ReaderWriter::ReadResult readHeightField(const std::string &, const osgDB::Options *) override {
+		return osgDB::ReaderWriter::ReadResult::FILE_LOADED;
+	}
+	osgDB::ReaderWriter::ReadResult readShader(const std::string &, const osgDB::Options *) override {
+		return osgDB::ReaderWriter::ReadResult::FILE_LOADED;
+	}
+	osgDB::ReaderWriter::ReadResult readScript(const std::string &, const osgDB::Options *) override {
+		return osgDB::ReaderWriter::ReadResult::FILE_LOADED;
+	}
+};
 
 struct RawMaterial {
 	Color albedo = Color(1, 1, 1, 1);
@@ -77,7 +124,7 @@ struct RawSurface {
 	std::vector<Color> colors;
 	std::vector<int32_t> indices;
 	RawMaterial material;
-	int fallback_group = -1;
+	int replacement_group = -1;
 	int lod_branch = -1;
 };
 
@@ -86,14 +133,14 @@ struct ConvertContext {
 	OsgSceneConvertOptions options;
 	std::vector<RawSurface> surfaces;
 	std::vector<RawMaterial> materials;
-	Vector<OsgExternalTileRef> external_tiles;
-	Vector<OsgLodRangePayload> lod_ranges;
+	Vector<TiledMeshTileDefinition> tiles;
+	Vector<TiledMeshLodRangePayload> lod_ranges;
 	Vector<String> warnings;
 	std::set<std::string> warning_keys;
 	osg::Vec3d minimum = osg::Vec3d(std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity(), std::numeric_limits<double>::infinity());
 	osg::Vec3d maximum = osg::Vec3d(-std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity());
 	bool has_bounds = false;
-	int next_fallback_group = 0;
+	int next_replacement_group = 0;
 };
 
 static bool finite_vec3(const osg::Vec3d &p_value) {
@@ -274,13 +321,13 @@ static void append_primitive_set(const osg::PrimitiveSet *p_primitive, uint32_t 
 	triangulate_sequence(mode, sequence, p_vertex_count, p_reverse, r_surface.indices);
 }
 
-static void process_geometry(const osg::Geometry *p_geometry, const osg::Matrixd &p_matrix, const RawMaterial &p_parent_material, int p_fallback_group, int p_lod_branch, ConvertContext &r_context) {
+static void process_geometry(const osg::Geometry *p_geometry, const osg::Matrixd &p_matrix, const RawMaterial &p_parent_material, int p_replacement_group, int p_lod_branch, ConvertContext &r_context) {
 	const osg::Array *vertex_array = p_geometry->getVertexArray();
 	if (!vertex_array || vertex_array->getNumElements() == 0) {
 		return;
 	}
 	RawSurface surface;
-	surface.fallback_group = p_fallback_group;
+	surface.replacement_group = p_replacement_group;
 	surface.lod_branch = p_lod_branch;
 	surface.material = apply_state_set(p_geometry->getStateSet(), p_parent_material);
 	const uint32_t vertex_count = vertex_array->getNumElements();
@@ -369,33 +416,39 @@ static double maximum_scale(const osg::Matrixd &p_matrix) {
 	return scale;
 }
 
-static void collect_external_tiles(const osg::Node *p_node, const osg::Matrixd &p_matrix, int p_fallback_group, ConvertContext &r_context) {
+static void collect_tiles(const osg::Node *p_node, const osg::Matrixd &p_matrix, int p_replacement_group, ConvertContext &r_context) {
 	if (const osg::PagedLOD *paged = dynamic_cast<const osg::PagedLOD *>(p_node)) {
 		const osg::Vec3d center = paged->getCenter() * p_matrix;
 		for (unsigned int i = 0; i < paged->getNumFileNames(); i++) {
 			if (paged->getFileName(i).empty()) {
 				continue;
 			}
-			OsgExternalTileRef reference;
-			reference.uri = OsgDataSource::resolve_uri(r_context.source_uri, String::utf8((paged->getDatabasePath() + paged->getFileName(i)).c_str()));
-			reference.center = { center.x(), center.y(), center.z() };
-			reference.radius = paged->getRadius() * maximum_scale(p_matrix);
+			TiledMeshTileDefinition reference;
+			TiledMeshContentRequest content;
+			content.uri = TiledMeshDataSource::resolve_uri(r_context.source_uri, osg_path_to_string(paged->getDatabasePath() + paged->getFileName(i)));
+			content.content_type = SNAME("osg_scene");
+			reference.provider_key = content.uri;
+			reference.contents.push_back(content);
+			reference.bounding_volume.center = { center.x(), center.y(), center.z() };
+			reference.bounding_volume.radius = paged->getRadius() * maximum_scale(p_matrix);
+			reference.selection.center = reference.bounding_volume.center;
+			reference.selection.radius = reference.bounding_volume.radius;
 			// A paging-only document often has no resident geometry of its own.
 			// Include the declared bounding sphere in the source bounds so the
 			// dataset still has a useful frame/selection box and root origin.
-			const double bound_radius = MAX(reference.radius, 0.0);
+			const double bound_radius = MAX(reference.bounding_volume.radius, 0.0);
 			for (int axis = 0; axis < 3; axis++) {
 				r_context.minimum[axis] = MIN(r_context.minimum[axis], center[axis] - bound_radius);
 				r_context.maximum[axis] = MAX(r_context.maximum[axis], center[axis] + bound_radius);
 			}
 			r_context.has_bounds = true;
 			if (i < paged->getNumRanges()) {
-				reference.min_range = paged->getMinRange(i);
-				reference.max_range = paged->getMaxRange(i);
+				reference.selection.minimum = paged->getMinRange(i);
+				reference.selection.maximum = paged->getMaxRange(i);
 			}
-			reference.range_mode = paged->getRangeMode() == osg::LOD::PIXEL_SIZE_ON_SCREEN ? OsgLodRangePayload::PIXEL_SIZE_ON_SCREEN : OsgLodRangePayload::DISTANCE_FROM_EYE_POINT;
-			reference.fallback_group = p_fallback_group;
-			r_context.external_tiles.push_back(reference);
+			reference.selection.mode = paged->getRangeMode() == osg::LOD::PIXEL_SIZE_ON_SCREEN ? TiledMeshSelectionRule::MODE_PROJECTED_PIXEL_RANGE : TiledMeshSelectionRule::MODE_DISTANCE_RANGE;
+			reference.replacement_group = p_replacement_group;
+			r_context.tiles.push_back(reference);
 		}
 	}
 	if (const osg::ProxyNode *proxy = dynamic_cast<const osg::ProxyNode *>(p_node)) {
@@ -404,43 +457,50 @@ static void collect_external_tiles(const osg::Node *p_node, const osg::Matrixd &
 			if (proxy->getFileName(i).empty()) {
 				continue;
 			}
-			OsgExternalTileRef reference;
-			reference.uri = OsgDataSource::resolve_uri(r_context.source_uri, String::utf8((proxy->getDatabasePath() + proxy->getFileName(i)).c_str()));
-			reference.center = { center.x(), center.y(), center.z() };
-			reference.radius = proxy->getRadius() * maximum_scale(p_matrix);
-			const double bound_radius = MAX(reference.radius, 0.0);
+			TiledMeshTileDefinition reference;
+			TiledMeshContentRequest content;
+			content.uri = TiledMeshDataSource::resolve_uri(r_context.source_uri, osg_path_to_string(proxy->getDatabasePath() + proxy->getFileName(i)));
+			content.content_type = SNAME("osg_scene");
+			reference.provider_key = content.uri;
+			reference.contents.push_back(content);
+			reference.bounding_volume.center = { center.x(), center.y(), center.z() };
+			reference.bounding_volume.radius = proxy->getRadius() * maximum_scale(p_matrix);
+			reference.selection.center = reference.bounding_volume.center;
+			reference.selection.radius = reference.bounding_volume.radius;
+			const double bound_radius = MAX(reference.bounding_volume.radius, 0.0);
 			for (int axis = 0; axis < 3; axis++) {
 				r_context.minimum[axis] = MIN(r_context.minimum[axis], center[axis] - bound_radius);
 				r_context.maximum[axis] = MAX(r_context.maximum[axis], center[axis] + bound_radius);
 			}
 			r_context.has_bounds = true;
-			reference.min_range = 0.0f;
-			reference.max_range = std::numeric_limits<float>::max();
-			reference.fallback_group = p_fallback_group;
-			r_context.external_tiles.push_back(reference);
+			reference.selection.mode = TiledMeshSelectionRule::MODE_DISTANCE_RANGE;
+			reference.selection.minimum = 0.0;
+			reference.selection.maximum = std::numeric_limits<float>::max();
+			reference.replacement_group = p_replacement_group;
+			r_context.tiles.push_back(reference);
 		}
 	}
 }
 
 static int append_lod_branch(const osg::LOD *p_lod, unsigned int p_child, const osg::Matrixd &p_matrix, int p_parent_branch, ConvertContext &r_context) {
-	OsgLodRangePayload branch;
+	TiledMeshLodRangePayload branch;
 	branch.parent = p_parent_branch;
 	const osg::Vec3d center = p_lod->getCenter() * p_matrix;
-	branch.center = { center.x(), center.y(), center.z() };
-	branch.radius = p_lod->getRadius() * maximum_scale(p_matrix);
+	branch.selection.center = { center.x(), center.y(), center.z() };
+	branch.selection.radius = p_lod->getRadius() * maximum_scale(p_matrix);
 	if (p_child < p_lod->getNumRanges()) {
-		branch.min_range = p_lod->getMinRange(p_child);
-		branch.max_range = p_lod->getMaxRange(p_child);
+		branch.selection.minimum = p_lod->getMinRange(p_child);
+		branch.selection.maximum = p_lod->getMaxRange(p_child);
 	} else {
-		branch.min_range = 0.0f;
-		branch.max_range = std::numeric_limits<float>::max();
+		branch.selection.minimum = 0.0;
+		branch.selection.maximum = std::numeric_limits<float>::max();
 	}
-	branch.range_mode = p_lod->getRangeMode() == osg::LOD::PIXEL_SIZE_ON_SCREEN ? OsgLodRangePayload::PIXEL_SIZE_ON_SCREEN : OsgLodRangePayload::DISTANCE_FROM_EYE_POINT;
+	branch.selection.mode = p_lod->getRangeMode() == osg::LOD::PIXEL_SIZE_ON_SCREEN ? TiledMeshSelectionRule::MODE_PROJECTED_PIXEL_RANGE : TiledMeshSelectionRule::MODE_DISTANCE_RANGE;
 	r_context.lod_ranges.push_back(branch);
 	return r_context.lod_ranges.size() - 1;
 }
 
-static void traverse_node(const osg::Node *p_node, const osg::Matrixd &p_parent_matrix, const RawMaterial &p_parent_material, int p_fallback_group, int p_lod_branch, ConvertContext &r_context) {
+static void traverse_node(const osg::Node *p_node, const osg::Matrixd &p_parent_matrix, const RawMaterial &p_parent_material, int p_replacement_group, int p_lod_branch, ConvertContext &r_context) {
 	if (!p_node) {
 		return;
 	}
@@ -449,22 +509,22 @@ static void traverse_node(const osg::Node *p_node, const osg::Matrixd &p_parent_
 		transform->computeLocalToWorldMatrix(matrix, nullptr);
 	}
 	const RawMaterial material = apply_state_set(p_node->getStateSet(), p_parent_material);
-	int child_fallback_group = p_fallback_group;
+	int child_replacement_group = p_replacement_group;
 	const osg::PagedLOD *paged = dynamic_cast<const osg::PagedLOD *>(p_node);
 	const osg::ProxyNode *proxy = dynamic_cast<const osg::ProxyNode *>(p_node);
 	if ((paged && paged->getNumFileNames() > 0) || (proxy && proxy->getNumFileNames() > 0)) {
-		child_fallback_group = r_context.next_fallback_group++;
+		child_replacement_group = r_context.next_replacement_group++;
 	}
-	collect_external_tiles(p_node, matrix, child_fallback_group, r_context);
+	collect_tiles(p_node, matrix, child_replacement_group, r_context);
 
 	if (const osg::Geometry *geometry = p_node->asDrawable() ? p_node->asDrawable()->asGeometry() : nullptr) {
-		process_geometry(geometry, matrix, material, p_fallback_group, p_lod_branch, r_context);
+		process_geometry(geometry, matrix, material, p_replacement_group, p_lod_branch, r_context);
 	}
 	if (const osg::Geode *geode = dynamic_cast<const osg::Geode *>(p_node)) {
 		for (unsigned int i = 0; i < geode->getNumDrawables(); i++) {
 			const osg::Drawable *drawable = geode->getDrawable(i);
 			if (const osg::Geometry *geometry = drawable ? drawable->asGeometry() : nullptr) {
-				process_geometry(geometry, matrix, material, p_fallback_group, p_lod_branch, r_context);
+				process_geometry(geometry, matrix, material, p_replacement_group, p_lod_branch, r_context);
 			} else if (drawable) {
 				add_warning(r_context, String::utf8(drawable->className()), vformat("Unsupported OSG drawable '%s' was skipped.", String::utf8(drawable->className())));
 			}
@@ -475,12 +535,12 @@ static void traverse_node(const osg::Node *p_node, const osg::Matrixd &p_parent_
 		const osg::LOD *lod = dynamic_cast<const osg::LOD *>(p_node);
 		for (unsigned int i = 0; i < group->getNumChildren(); i++) {
 			const int child_lod_branch = lod ? append_lod_branch(lod, i, matrix, p_lod_branch, r_context) : p_lod_branch;
-			traverse_node(group->getChild(i), matrix, material, child_fallback_group, child_lod_branch, r_context);
+			traverse_node(group->getChild(i), matrix, material, child_replacement_group, child_lod_branch, r_context);
 		}
 	}
 }
 
-static Vector3 source_to_local(const osg::Vec3d &p_source, const OsgVector3d &p_origin, const OsgSceneConvertOptions &p_options) {
+static Vector3 source_to_local(const osg::Vec3d &p_source, const TiledMeshVector3d &p_origin, const OsgSceneConvertOptions &p_options) {
 	const double x = (p_source.x() - p_origin.x) * p_options.unit_scale;
 	const double y = (p_source.y() - p_origin.y) * p_options.unit_scale;
 	const double z = (p_source.z() - p_origin.z) * p_options.unit_scale;
@@ -492,7 +552,7 @@ static Vector3 source_normal_to_local(const osg::Vec3d &p_source, bool p_osg_z_u
 	return result.normalized();
 }
 
-static void generate_normals(OsgMeshSurfacePayload &r_surface) {
+static void generate_normals(TiledMeshMeshSurfacePayload &r_surface) {
 	r_surface.normals.resize(r_surface.vertices.size());
 	for (int i = 0; i + 2 < r_surface.indices.size(); i += 3) {
 		const int32_t ia = r_surface.indices[i];
@@ -508,12 +568,12 @@ static void generate_normals(OsgMeshSurfacePayload &r_surface) {
 	}
 }
 
-static void copy_image_payload(const osg::Image *p_image, const String &p_source_uri, OsgImagePayload &r_payload, ConvertContext &r_context) {
+static void copy_image_payload(const osg::Image *p_image, const String &p_source_uri, TiledMeshImagePayload &r_payload, ConvertContext &r_context) {
 	if (!p_image) {
 		return;
 	}
 	if (!p_image->getFileName().empty()) {
-		r_payload.uri = OsgDataSource::resolve_uri(p_source_uri, String::utf8(p_image->getFileName().c_str()));
+		r_payload.uri = TiledMeshDataSource::resolve_uri(p_source_uri, osg_path_to_string(p_image->getFileName()));
 	}
 	if (!p_image->valid()) {
 		return;
@@ -540,17 +600,28 @@ static void copy_image_payload(const osg::Image *p_image, const String &p_source
 			uint8_t b = 255;
 			uint8_t a = 255;
 			if (format == GL_RGBA) {
-				r = source[x * 4 + 0]; g = source[x * 4 + 1]; b = source[x * 4 + 2]; a = source[x * 4 + 3];
+				r = source[x * 4 + 0];
+				g = source[x * 4 + 1];
+				b = source[x * 4 + 2];
+				a = source[x * 4 + 3];
 			} else if (format == GL_BGRA) {
-				b = source[x * 4 + 0]; g = source[x * 4 + 1]; r = source[x * 4 + 2]; a = source[x * 4 + 3];
+				b = source[x * 4 + 0];
+				g = source[x * 4 + 1];
+				r = source[x * 4 + 2];
+				a = source[x * 4 + 3];
 			} else if (format == GL_RGB) {
-				r = source[x * 3 + 0]; g = source[x * 3 + 1]; b = source[x * 3 + 2];
+				r = source[x * 3 + 0];
+				g = source[x * 3 + 1];
+				b = source[x * 3 + 2];
 			} else if (format == GL_BGR) {
-				b = source[x * 3 + 0]; g = source[x * 3 + 1]; r = source[x * 3 + 2];
+				b = source[x * 3 + 0];
+				g = source[x * 3 + 1];
+				r = source[x * 3 + 2];
 			} else if (format == GL_LUMINANCE) {
 				r = g = b = source[x];
 			} else if (format == GL_LUMINANCE_ALPHA) {
-				r = g = b = source[x * 2]; a = source[x * 2 + 1];
+				r = g = b = source[x * 2];
+				a = source[x * 2 + 1];
 			} else if (format == GL_ALPHA) {
 				a = source[x];
 			}
@@ -563,8 +634,8 @@ static void copy_image_payload(const osg::Image *p_image, const String &p_source
 	}
 }
 
-static OsgMaterialPayload make_material_payload(const RawMaterial &p_raw, ConvertContext &r_context) {
-	OsgMaterialPayload material;
+static TiledMeshMaterialPayload make_material_payload(const RawMaterial &p_raw, ConvertContext &r_context) {
+	TiledMeshMaterialPayload material;
 	material.albedo = p_raw.albedo;
 	material.transparent = p_raw.transparent;
 	material.double_sided = p_raw.double_sided;
@@ -574,7 +645,7 @@ static OsgMaterialPayload make_material_payload(const RawMaterial &p_raw, Conver
 	return material;
 }
 
-static int find_or_add_material(const RawMaterial &p_material, ConvertContext &r_context, OsgTileDocument &r_document) {
+static int find_or_add_material(const RawMaterial &p_material, ConvertContext &r_context, TiledMeshDocument &r_document) {
 	for (int i = 0; i < (int)r_context.materials.size(); i++) {
 		const RawMaterial &existing = r_context.materials[i];
 		if (existing.albedo == p_material.albedo && existing.transparent == p_material.transparent &&
@@ -588,9 +659,9 @@ static int find_or_add_material(const RawMaterial &p_material, ConvertContext &r
 	return r_document.materials.size() - 1;
 }
 
-static bool merge_compatible_surface(const OsgMeshSurfacePayload &p_surface, OsgTileDocument &r_document) {
-	for (OsgMeshSurfacePayload &existing : r_document.surfaces) {
-		if (existing.material != p_surface.material || existing.fallback_group != p_surface.fallback_group || existing.lod_branch != p_surface.lod_branch ||
+static bool merge_compatible_surface(const TiledMeshMeshSurfacePayload &p_surface, TiledMeshDocument &r_document) {
+	for (TiledMeshMeshSurfacePayload &existing : r_document.surfaces) {
+		if (existing.material != p_surface.material || existing.replacement_group != p_surface.replacement_group || existing.lod_branch != p_surface.lod_branch ||
 				existing.normals.is_empty() != p_surface.normals.is_empty() || existing.uv0.is_empty() != p_surface.uv0.is_empty() || existing.colors.is_empty() != p_surface.colors.is_empty()) {
 			continue;
 		}
@@ -633,20 +704,81 @@ static bool merge_compatible_surface(const OsgMeshSurfacePayload &p_surface, Osg
 	return false;
 }
 
+class PackedByteArrayStreamBuffer : public std::streambuf {
+	char *begin = nullptr;
+
+protected:
+	pos_type seekoff(off_type p_offset, std::ios_base::seekdir p_direction, std::ios_base::openmode p_mode) override {
+		if (!(p_mode & std::ios_base::in) || (p_mode & std::ios_base::out) || !begin) {
+			return pos_type(off_type(-1));
+		}
+		off_type base_offset = 0;
+		if (p_direction == std::ios_base::cur) {
+			base_offset = gptr() - eback();
+		} else if (p_direction == std::ios_base::end) {
+			base_offset = egptr() - eback();
+		} else if (p_direction != std::ios_base::beg) {
+			return pos_type(off_type(-1));
+		}
+		const off_type target = base_offset + p_offset;
+		if (target < 0 || target > egptr() - eback()) {
+			return pos_type(off_type(-1));
+		}
+		setg(begin, begin + target, egptr());
+		return pos_type(target);
+	}
+
+	pos_type seekpos(pos_type p_position, std::ios_base::openmode p_mode) override {
+		return seekoff(off_type(p_position), std::ios_base::beg, p_mode);
+	}
+
+public:
+	PackedByteArrayStreamBuffer(const uint8_t *p_bytes, size_t p_size) {
+		begin = const_cast<char *>(reinterpret_cast<const char *>(p_bytes));
+		setg(begin, begin, begin + p_size);
+	}
+};
+
 static osgDB::ReaderWriter::ReadResult read_node_with(const char *p_extension, const PackedByteArray &p_bytes, osgDB::Options *p_options) {
 	osgDB::ReaderWriter *reader = osgDB::Registry::instance()->getReaderWriterForExtension(p_extension);
 	if (!reader) {
 		return osgDB::ReaderWriter::ReadResult(vformat("OSG reader '%s' is not registered.", p_extension).utf8().get_data());
 	}
-	std::string contents(reinterpret_cast<const char *>(p_bytes.ptr()), p_bytes.size());
-	std::istringstream stream(contents, std::ios::in | std::ios::binary);
+	PackedByteArrayStreamBuffer buffer(p_bytes.ptr(), p_bytes.size());
+	std::istream stream(&buffer);
 	return reader->readNode(stream, p_options);
+}
+
+// Photogrammetry exports can include terminal tiles containing only empty
+// Groups and render state. Do not mistake skipped/unsupported geometry or an
+// unknown node class for an intentionally empty scene.
+static bool is_empty_container_tree(const osg::Node *p_node) {
+	if (!p_node || strcmp(p_node->libraryName(), "osg") != 0) {
+		return false;
+	}
+	if (strcmp(p_node->className(), "Geode") == 0) {
+		const osg::Geode *geode = dynamic_cast<const osg::Geode *>(p_node);
+		return geode && geode->getNumDrawables() == 0;
+	}
+	if (strcmp(p_node->className(), "Group") != 0) {
+		return false;
+	}
+	const osg::Group *group = p_node->asGroup();
+	if (!group) {
+		return false;
+	}
+	for (unsigned int i = 0; i < group->getNumChildren(); i++) {
+		if (!is_empty_container_tree(group->getChild(i))) {
+			return false;
+		}
+	}
+	return true;
 }
 
 } // namespace
 
-Error OsgSceneConverter::parse_bytes(const PackedByteArray &p_bytes, const String &p_source_uri, const OsgSceneConvertOptions &p_options, OsgTileDocument &r_document, String &r_error) {
-	r_document = OsgTileDocument();
+Error OsgSceneConverter::parse_bytes(const PackedByteArray &p_bytes, const String &p_source_uri, const OsgSceneConvertOptions &p_options, TiledMeshDocument &r_document, String &r_error) {
+	r_document = TiledMeshDocument();
 	r_error.clear();
 	if (p_bytes.is_empty()) {
 		r_error = "OSG input is empty.";
@@ -655,6 +787,7 @@ Error OsgSceneConverter::parse_bytes(const PackedByteArray &p_bytes, const Strin
 
 	osg::ref_ptr<osgDB::Options> options = new osgDB::Options;
 	options->setPluginStringData("godotDisableExternalResources", "1");
+	options->setReadFileCallback(new DeferredOsgResources);
 	options->setPluginStringData("fileType", p_source_uri.get_extension().to_lower() == "osgb" ? "Binary" : "");
 
 	osgDB::ReaderWriter::ReadResult result;
@@ -664,7 +797,8 @@ Error OsgSceneConverter::parse_bytes(const PackedByteArray &p_bytes, const Strin
 				(p_bytes.size() >= 5 && memcmp(p_bytes.ptr(), "<?xml", 5) == 0);
 		result = read_node_with(osg2_stream ? "osg2" : "osg", p_bytes, options.get());
 		if (!result.validNode()) {
-			result = read_node_with(osg2_stream ? "osg" : "osg2", p_bytes, options.get());
+			osgDB::ReaderWriter::ReadResult fallback = read_node_with(osg2_stream ? "osg" : "osg2", p_bytes, options.get());
+			if (fallback.validNode()) result = fallback;
 		}
 	} else {
 		result = read_node_with("osg2", p_bytes, options.get());
@@ -679,17 +813,17 @@ Error OsgSceneConverter::parse_bytes(const PackedByteArray &p_bytes, const Strin
 
 	osg::ref_ptr<osg::Node> root = result.takeNode();
 	ConvertContext context;
-	context.source_uri = OsgDataSource::normalize_uri(p_source_uri);
+	context.source_uri = TiledMeshDataSource::normalize_uri(p_source_uri);
 	context.options = p_options;
 	osg::Matrixd identity;
 	identity.makeIdentity();
 	traverse_node(root.get(), identity, RawMaterial(), -1, -1, context);
-	if (context.surfaces.empty() && context.external_tiles.is_empty()) {
+	if (context.surfaces.empty() && context.tiles.is_empty() && !is_empty_container_tree(root.get())) {
 		r_error = vformat("'%s' contains no supported geometry or external tiles.", p_source_uri);
 		return ERR_FILE_CORRUPT;
 	}
 
-	OsgVector3d origin = p_options.explicit_origin;
+	TiledMeshVector3d origin = p_options.explicit_origin;
 	if (p_options.use_root_center && context.has_bounds) {
 		origin.x = (context.minimum.x() + context.maximum.x()) * 0.5;
 		origin.y = (context.minimum.y() + context.maximum.y()) * 0.5;
@@ -697,16 +831,19 @@ Error OsgSceneConverter::parse_bytes(const PackedByteArray &p_bytes, const Strin
 	}
 
 	r_document.source_origin = origin;
-	r_document.external_tiles = context.external_tiles;
+	r_document.coordinate_frame.origin = origin;
+	r_document.coordinate_frame.unit_scale = p_options.unit_scale;
+	r_document.coordinate_frame.source_to_local = p_options.osg_z_up ? Basis(Vector3(1, 0, 0), Vector3(0, 0, -1), Vector3(0, 1, 0)) : Basis();
+	r_document.tiles = context.tiles;
 	r_document.lod_ranges = context.lod_ranges;
 	bool document_has_aabb = false;
 	// Pure PagedLOD/ProxyNode roots still need a useful frame/selection box.
 	if (context.has_bounds && context.surfaces.empty()) {
 		for (int mask = 0; mask < 8; mask++) {
 			const osg::Vec3d corner(
-				(mask & 1) ? context.maximum.x() : context.minimum.x(),
-				(mask & 2) ? context.maximum.y() : context.minimum.y(),
-				(mask & 4) ? context.maximum.z() : context.minimum.z());
+					(mask & 1) ? context.maximum.x() : context.minimum.x(),
+					(mask & 2) ? context.maximum.y() : context.minimum.y(),
+					(mask & 4) ? context.maximum.z() : context.minimum.z());
 			const Vector3 local_corner = source_to_local(corner, origin, p_options);
 			if (!document_has_aabb) {
 				r_document.local_aabb = AABB(local_corner, Vector3());
@@ -717,7 +854,7 @@ Error OsgSceneConverter::parse_bytes(const PackedByteArray &p_bytes, const Strin
 		}
 	}
 	for (const RawSurface &raw : context.surfaces) {
-		OsgMeshSurfacePayload surface;
+		TiledMeshMeshSurfacePayload surface;
 		surface.vertices.resize((int)raw.vertices.size());
 		for (int i = 0; i < (int)raw.vertices.size(); i++) {
 			const Vector3 vertex = source_to_local(raw.vertices[i], origin, p_options);
@@ -753,7 +890,7 @@ Error OsgSceneConverter::parse_bytes(const PackedByteArray &p_bytes, const Strin
 			}
 		}
 		surface.material = find_or_add_material(raw.material, context, r_document);
-		surface.fallback_group = raw.fallback_group;
+		surface.replacement_group = raw.replacement_group;
 		surface.lod_branch = raw.lod_branch;
 		surface.estimated_bytes = uint64_t(surface.vertices.size()) * sizeof(Vector3) + uint64_t(surface.normals.size()) * sizeof(Vector3) + uint64_t(surface.uv0.size()) * sizeof(Vector2) + uint64_t(surface.colors.size()) * sizeof(Color) + uint64_t(surface.indices.size()) * sizeof(int32_t);
 		r_document.estimated_cpu_bytes += surface.estimated_bytes;
@@ -767,7 +904,7 @@ Error OsgSceneConverter::parse_bytes(const PackedByteArray &p_bytes, const Strin
 			r_document.surfaces.push_back(surface);
 		}
 	}
-	for (const OsgMaterialPayload &material : r_document.materials) {
+	for (const TiledMeshMaterialPayload &material : r_document.materials) {
 		r_document.estimated_cpu_bytes += material.albedo_image.rgba8.size();
 	}
 	r_document.warnings = context.warnings;

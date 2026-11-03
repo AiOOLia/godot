@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="TiledMeshFormatOptions" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Base resource for tiled mesh format-specific options.
+	</brief_description>
+	<description>
+		Format modules derive from this resource to expose settings without adding format-specific properties to [TiledMeshInstance3D]. Options are snapshotted when a format session opens and are not accessed from parser workers.
+	</description>
+	<tutorials>
+	</tutorials>
+</class>

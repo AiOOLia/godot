@@ -8,4 +8,6 @@ In a nutshell, the glTF module works like this:
   are optional features that build on top of the base glTF spec.
 * [`GLTFState`](gltf_state.h) holds collections of structures and extensions.
 * [`GLTFDocument`](gltf_document.h) operates on GLTFState and its elements.
+  When the shared Draco module is enabled, it also decodes
+  `KHR_draco_mesh_compression` primitives during import.
 * The [`editor/`](editor/) folder uses GLTFDocument to import and export 3D models.
