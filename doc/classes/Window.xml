@@ -821,7 +821,7 @@
 		<signal name="dpi_changed">
 			<description>
 				Emitted when the [Window]'s DPI changes as a result of OS-level changes (e.g. moving the window from a Retina display to a lower resolution one).
-				[b]Note:[/b] Only implemented on macOS and Linux (Wayland).
+				[b]Note:[/b] Implemented on macOS, Linux (Wayland), and Windows when [member ProjectSettings.display/window/dpi/per_monitor_dpi_aware] is enabled.
 			</description>
 		</signal>
 		<signal name="files_dropped">

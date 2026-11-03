@@ -966,6 +966,9 @@
 			If [code]true[/code], allows HiDPI display on Windows, macOS, Android, iOS and Web. If [code]false[/code], the platform's low-DPI fallback will be used on HiDPI displays, which causes the window to be displayed in a blurry or pixelated manner (and can cause various window management bugs). Therefore, it is recommended to make your project scale to [url=$DOCS_URL/tutorials/rendering/multiple_resolutions.html]multiple resolutions[/url] instead of disabling this setting.
 			[b]Note:[/b] This setting has no effect on Linux as DPI-awareness fallbacks are not supported there.
 		</member>
+		<member name="display/window/dpi/per_monitor_dpi_aware" type="bool" setter="" getter="" default="false">
+			On Windows, enables per-monitor DPI awareness for the running project when [member display/window/dpi/allow_hidpi] is enabled. Windows preserves the logical window size on DPI changes and emits [signal Window.dpi_changed]. The application must update [member Window.content_scale_factor] for each window; UI scaling is not automatic. Requires a restart. Does not change editor or project manager DPI awareness.
+		</member>
 		<member name="display/window/energy_saving/keep_screen_on" type="bool" setter="" getter="" default="true">
 			If [code]true[/code], keeps the screen on (even in case of inactivity), so the screensaver does not take over. Works on desktop and mobile platforms.
 		</member>

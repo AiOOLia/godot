@@ -1,5 +1,7 @@
 # Godot Engine
 
+本仓库的引擎定制与升级维护记录见 [Godot 源码修改清单](GODOT_SOURCE_CHANGES.md)。
+
 <p align="center">
   <a href="https://godotengine.org">
     <img src="misc/logo/logo_outlined.svg" width="400" alt="Godot Engine logo">

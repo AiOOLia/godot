@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "reviewed_on": "2026-10-28",
+  "comparison_base": "f6ab5db28b9d989a3ae710d57410a123cf0e4b23",
+  "inventory_head": "9c605b09a54f08c28548d8b018ffe078761e1ec0",
+  "baseline_note": "Local history immediately before the OSG integration; upstream remote provenance has not been independently verified. Includes subsequent committed, staged, unstaged and non-ignored untracked paths.",
+  "entries": [
+    {
+      "id": "GD-DPI-001",
+      "title": "Windows per-monitor DPI awareness and native window transitions",
+      "paths": ["main/main.cpp", "platform/windows/display_server_windows.cpp", "doc/classes/ProjectSettings.xml", "doc/classes/Window.xml"]
+    },
+    {
+      "id": "GD-TILE-001",
+      "title": "Shared tiled mesh streaming, rendering and editor integration",
+      "paths": ["modules/tiled_mesh_3d/"]
+    },
+    {
+      "id": "GD-OSG-001",
+      "title": "Existing OSG parser integration and adaptation to shared tiled mesh runtime",
+      "paths": ["modules/osgdb/", "thirdparty/osgdb/", "thirdparty/README.md"]
+    },
+    {
+      "id": "GD-3DT-001",
+      "title": "3D Tiles format adapters, metadata, picking and ion acquisition",
+      "paths": ["modules/3dtiles/"]
+    },
+    {
+      "id": "GD-DRACO-001",
+      "title": "Shared Draco decoder and GLTFDocument integration",
+      "paths": ["modules/draco/", "thirdparty/draco/", "modules/gltf/config.py", "modules/gltf/gltf_document.cpp", "modules/gltf/tests/test_gltf_draco.h", "modules/gltf/README.md", "thirdparty/README.md", "COPYRIGHT.txt"]
+    },
+    {
+      "id": "GD-USD-001",
+      "title": "Optional USD module and explicit OpenUSD SDK preparation (disabled by default)",
+      "paths": ["modules/usd/", "thirdparty/openusd/"]
+    },
+    {
+      "id": "GD-MAINT-001",
+      "title": "Local modification inventory and read-only coverage checker",
+      "paths": ["GODOT_SOURCE_CHANGES.md", "GODOT_SOURCE_CHANGES.json", "misc/scripts/check_local_engine_changes.py", "README.md"]
+    }
+  ],
+  "excluded": [
+    {"path": "projects/", "reason": "Application projects, including DigitalViewer scripts, tests and packaging; not engine source patches."},
+    {"path": ".tmp_tests/", "reason": "Local temporary test harnesses; not a migration source."},
+    {"path": "TiledMeshInstance_PLAN.md", "reason": "Historical design plan; current implementation is inventoried in GD-TILE-001."}
+  ]
+}
