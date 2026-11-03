@@ -705,6 +705,19 @@ Patches:
 - `0001-msvc-2019-psa-redeclaration.patch` ([GH-90535](https://github.com/godotengine/godot/pull/90535))
 
 
+## Draco
+
+- Upstream: https://github.com/google/draco
+- Version: 1.5.7 (8786740086a9f4d83f44aa83badfbea4dce7a1b5, 2024)
+- License: Apache 2.0
+
+Files extracted from upstream repository:
+
+- Decoder dependencies from `src/draco/`; encoder, tests and tools are not built.
+- `LICENSE`
+- `draco/draco_features.h` generated for mesh and point cloud decoding only.
+
+
 ## metal-cpp
 
 - Upstream: https://developer.apple.com/metal/cpp/
@@ -934,6 +947,18 @@ Files extracted from upstream source:
 
 Godot builds this snapshot from source as a static parser. Prebuilt binaries
 under this directory are intentionally excluded from the build.
+
+Traditional `.osg` object wrappers were added on 2026-10-28 from the existing
+local OpenSceneGraph 3.7.0-rc1 source snapshot (`E:/WorkSpace/Gitea/OpenSceneGraph`),
+under `src/osgDB/deprecated-dotosg/osg/`. `SOURCE.json` records original file hashes
+and the two build adaptations (osgDB `.h` includes and removal of unused OpenThreads
+includes). The upstream commit is unknown; no parser library was downloaded or replaced.
+The upstream license is preserved there as `LICENSE.txt` and shipped with DigitalViewer.
+These wrappers cover the static mesh/material/texture/LOD/ProxyNode subset used by
+the Godot bridge, not all OSG scene graph classes.
+
+Local parser fix: `src/osgDB/FieldReader.cpp` indexes the two delimiter tables with
+unsigned bytes, avoiding out-of-bounds access and truncated unquoted UTF-8/ANSI paths.
 
 
 ## pcre2

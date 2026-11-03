@@ -301,12 +301,12 @@ bool FieldReader::_readField(Field* fieldPtr)
                     return fieldPtr && fieldPtr->getNoCharacters()!=0;
                 }
                 c = ch;
-                if (_delimiterEatLookUp[int(c)])
+                if (_delimiterEatLookUp[static_cast<unsigned char>(c)])
                 {
                     _fin->ignore(1);
                     return fieldPtr && fieldPtr->getNoCharacters()!=0;
                 }
-                if (_delimiterKeepLookUp[int(c)])
+                if (_delimiterKeepLookUp[static_cast<unsigned char>(c)])
                 {
                     return fieldPtr && fieldPtr->getNoCharacters()!=0;
                 }

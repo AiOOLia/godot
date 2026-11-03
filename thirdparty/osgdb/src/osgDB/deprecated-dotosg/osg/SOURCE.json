@@ -1,0 +1,34 @@
+{
+  "source": "Local OpenSceneGraph 3.7.0-rc1 snapshot, E:/WorkSpace/Gitea/OpenSceneGraph/src/osgWrappers/deprecated-dotosg/osg",
+  "upstream_commit": null,
+  "license": "OSGPL 0.0 or later; see LICENSE.txt",
+  "adaptations": [
+    "osgDB headers use .h in the existing embedded snapshot",
+    "Remove unused OpenThreads includes from StateSet.cpp"
+  ],
+  "upstream_sha256": {
+    "Object.cpp": "7022f8e8046b02e72a07fe47cd640e367650a89ca941b674d9d02aa1f64925fa",
+    "Node.cpp": "229440811195297966f5ccefaee4fa75395b0da4e9fccecbe2aa3e04ee2c7ec1",
+    "Group.cpp": "c137f429424b457612de1656d21a5ee40997cf3543eece6470abee6109d137ad",
+    "Transform.cpp": "5e1aa8904a5d9451f0022fa9d5ae00c33c1e485213f11d685d2724eb96d7d9c9",
+    "Matrix.cpp": "593e39c110d5d52b65d13bb4f537df15e538e21c8d4be01cb4a4fa05b7082d14",
+    "MatrixTransform.cpp": "e939751376e38e88e6ac59c8c405e538f24dd2336bc73e212357779e7c5fca49",
+    "Geode.cpp": "a9333a01bbdde9ca9b3a6678895b749c18ebdeceeb6fd11c19720c9ec0eadaf2",
+    "Drawable.cpp": "036a81162a6e01c1a782a3c2043d92029fafb24ae0250df1c4214cc3451c00d8",
+    "Geometry.cpp": "e05e0bd4e1dace9c123c72b09d3d469364b182afdecd6107dad1c2773cc144f9",
+    "LOD.cpp": "16b89b8d6abf63637ac12b2f3663b47720fcd477ad138c0bdb9642867eeae60f",
+    "PagedLOD.cpp": "9baeffeab42313ca04541f7eac3babafcf89ea3179a3be2d84dd84b1fa0dccfa",
+    "ProxyNode.cpp": "d18e09ce1475956b7254170c01406eeddbfd2938e16b6e6efa7d727620ca5307",
+    "StateAttribute.cpp": "88ac2d141a8b210c8ce8940ed9ebb91d022a2dd37788d2ff7191a508c0c23482",
+    "StateSet.cpp": "2e1a02b08e385affd0613ad3d222b38e2660c889ff0719e28eff44a3c222a51b",
+    "Material.cpp": "dca9259fd07167687813a2d21b2ca310166779067d2969bf928d918f1e2a9ff8",
+    "Texture.cpp": "e5a86a542f6d10d1861cd1a643abec71e21eff2922e67b5c7e4b8c4a197da025",
+    "Texture2D.cpp": "d6815015eda2db318d420a22a9c1a223a4a398ef29892737fdac69565f293b47",
+    "Image.cpp": "4827be5106713b17bce1017aea8d8f54beb51045efab8189acbf7b8c199e1204",
+    "AlphaFunc.cpp": "0f49ce03a2f2b7f624015947b7178a2794a71bb526dfd36810a051323e4ebc7b",
+    "BlendFunc.cpp": "e6332ffa561c49612c9ccb9c5def137537f475fe9b10e4c916d3e2cef2155c36",
+    "CullFace.cpp": "972efb8c19c72efe86ab56f3548909b96b0c9c8f92f1a42e3ec2ee3f6e1bd381",
+    "FrontFace.cpp": "d164115f38192d291bea245b55a868c1850be4972ce92477eacd3be76b010de3",
+    "Matrix.h": "086c8c44bf5b9be7efd95cd12ce68855f1dcaba11b1665434f718fd0a8b118fb"
+  }
+}
