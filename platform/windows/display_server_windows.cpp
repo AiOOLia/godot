@@ -1497,6 +1497,19 @@ static int QueryDpiForMonitor(HMONITOR hmon) {
 	return (dpiX + dpiY) / 2;
 }
 
+// Keep legacy projects system-DPI-aware. Per-monitor projects need non-client
+// geometry in the target monitor's DPI as well as unvirtualized client pixels.
+static void adjust_window_rect_for_dpi(RECT *p_rect, DWORD p_style, DWORD p_ex_style, UINT p_dpi) {
+	if (GLOBAL_GET("display/window/dpi/per_monitor_dpi_aware")) {
+		typedef BOOL(WINAPI * AdjustWindowRectExForDpiPtr)(LPRECT, DWORD, BOOL, DWORD, UINT);
+		static auto adjust_for_dpi = (AdjustWindowRectExForDpiPtr)GetProcAddress(GetModuleHandleW(L"user32.dll"), "AdjustWindowRectExForDpi");
+		if (adjust_for_dpi && adjust_for_dpi(p_rect, p_style, FALSE, p_ex_style, p_dpi)) {
+			return;
+		}
+	}
+	AdjustWindowRectEx(p_rect, p_style, FALSE, p_ex_style);
+}
+
 static BOOL CALLBACK _MonitorEnumProcDpi(HMONITOR hMonitor, HDC hdcMonitor, LPRECT lprcMonitor, LPARAM dwData) {
 	EnumDpiData *data = (EnumDpiData *)dwData;
 
@@ -2374,7 +2387,7 @@ void DisplayServerWindows::window_set_position(const Point2i &p_position, Displa
 	const DWORD style = GetWindowLongPtr(wd.hWnd, GWL_STYLE);
 	const DWORD exStyle = GetWindowLongPtr(wd.hWnd, GWL_EXSTYLE);
 
-	AdjustWindowRectEx(&rc, style, false, exStyle);
+	adjust_window_rect_for_dpi(&rc, style, exStyle, QueryDpiForMonitor(MonitorFromWindow(wd.hWnd, MONITOR_DEFAULTTONEAREST)));
 	MoveWindow(wd.hWnd, rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top, TRUE);
 
 	wd.last_pos = p_position;
@@ -6596,6 +6609,18 @@ LRESULT DisplayServerWindows::WndProc(HWND hWnd, UINT uMsg, WPARAM wParam, LPARA
 			}
 		} break;
 
+		case WM_DPICHANGED: {
+			// Windows supplies the new outer rectangle, preserving the logical size.
+			// Apply it before notifying the scene so applications only scale content.
+			const WindowData &wd = windows[window_id];
+			if (!wd.fullscreen && !wd.maximized && !wd.minimized && !wd.parent_hwnd) {
+				const RECT *rect = (const RECT *)lParam;
+				SetWindowPos(hWnd, nullptr, rect->left, rect->top, rect->right - rect->left, rect->bottom - rect->top, SWP_NOZORDER | SWP_NOACTIVATE);
+			}
+			_send_window_event(windows[window_id], DisplayServerEnums::WINDOW_EVENT_DPI_CHANGE);
+			return 0;
+		} break;
+
 		case WM_DISPLAYCHANGE: {
 			// Update HDR capabilities and reference luminance when display changes.
 			_legacy_update_hdr_output_for_tracked_windows(true);
@@ -7223,7 +7248,7 @@ Error DisplayServerWindows::_create_window(DisplayServerEnums::WindowID p_window
 	WindowRect.bottom += offset.y;
 
 	if (p_mode != DisplayServerEnums::WINDOW_MODE_FULLSCREEN && p_mode != DisplayServerEnums::WINDOW_MODE_EXCLUSIVE_FULLSCREEN) {
-		AdjustWindowRectEx(&WindowRect, dwStyle, FALSE, dwExStyle);
+		adjust_window_rect_for_dpi(&WindowRect, dwStyle, dwExStyle, screen_get_dpi(rq_screen));
 	}
 
 	DisplayServerEnums::WindowID id = p_window_id;
@@ -7925,7 +7950,15 @@ DisplayServerWindows::DisplayServerWindows(const String &p_rendering_driver, Dis
 	}
 
 	if (OS::get_singleton()->is_hidpi_allowed()) {
-		SetProcessDpiAwareness(PROCESS_SYSTEM_DPI_AWARE);
+		if (GLOBAL_GET("display/window/dpi/per_monitor_dpi_aware") && !Engine::get_singleton()->is_editor_hint() && !Engine::get_singleton()->is_project_manager_hint()) {
+			typedef BOOL(WINAPI * SetProcessDpiAwarenessContextPtr)(HANDLE);
+			auto set_context = (SetProcessDpiAwarenessContextPtr)GetProcAddress(GetModuleHandleW(L"user32.dll"), "SetProcessDpiAwarenessContext");
+			if (!set_context || !set_context(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)) {
+				SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
+			}
+		} else {
+			SetProcessDpiAwareness(PROCESS_SYSTEM_DPI_AWARE);
+		}
 	}
 
 	HMODULE comctl32 = LoadLibraryW(L"comctl32.dll");
