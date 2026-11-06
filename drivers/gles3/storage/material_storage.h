@@ -85,6 +85,7 @@ struct Shader {
 /* Material structs */
 
 struct MaterialData {
+	RendererMaterialStorage::DepthBias depth_bias;
 	void update_uniform_buffer(const HashMap<StringName, ShaderLanguage::ShaderNode::Uniform> &p_uniforms, const uint32_t *p_uniform_offsets, const HashMap<StringName, Variant> &p_parameters, uint8_t *p_buffer, uint32_t p_buffer_size);
 	void update_textures(const HashMap<StringName, Variant> &p_parameters, const HashMap<StringName, HashMap<int, RID>> &p_default_textures, const Vector<ShaderCompiler::GeneratedCode::Texture> &p_texture_uniforms, RID *p_textures, bool p_use_linear_color);
 	RID get_default_texture_id(ShaderLanguage::DataType p_type, ShaderLanguage::ShaderNode::Uniform::Hint p_hint);
@@ -125,6 +126,7 @@ struct Material {
 	bool texture_dirty = false;
 	HashMap<StringName, Variant> params;
 	int32_t priority = 0;
+	RendererMaterialStorage::DepthBias depth_bias;
 	RID next_pass;
 	SelfList<Material> update_element;
 
@@ -685,6 +687,7 @@ public:
 
 	virtual void material_set_next_pass(RID p_material, RID p_next_material) override;
 	virtual void material_set_render_priority(RID p_material, int priority) override;
+	virtual void material_set_depth_bias(RID p_material, bool p_enabled, float p_constant_factor, float p_slope_factor) override;
 
 	virtual bool material_is_animated(RID p_material) override;
 	virtual bool material_casts_shadows(RID p_material) override;

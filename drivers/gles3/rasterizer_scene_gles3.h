@@ -497,6 +497,9 @@ private:
 		bool current_blend_enabled = false;
 		bool current_depth_draw_enabled = false;
 		bool current_depth_test_enabled = false;
+		bool current_depth_bias_enabled = false;
+		float current_depth_bias_constant_factor = 0.0f;
+		float current_depth_bias_slope_factor = 0.0f;
 		bool current_scissor_test_enabled = false;
 
 		void reset_gl_state() {
@@ -514,6 +517,8 @@ private:
 			current_depth_draw_enabled = false;
 			glDisable(GL_DEPTH_TEST);
 			current_depth_test_enabled = false;
+			glDisable(GL_POLYGON_OFFSET_FILL);
+			current_depth_bias_enabled = false;
 
 			glDepthFunc(GL_GEQUAL);
 			current_depth_function = GL_GEQUAL;
@@ -587,6 +592,23 @@ private:
 			if (current_depth_function != p_depth_func) {
 				glDepthFunc(p_depth_func);
 				current_depth_function = p_depth_func;
+			}
+		}
+
+		void set_gl_depth_bias(const RendererMaterialStorage::DepthBias &p_bias) {
+			if (current_depth_bias_enabled != p_bias.enabled) {
+				if (p_bias.enabled) {
+					glEnable(GL_POLYGON_OFFSET_FILL);
+				} else {
+					glDisable(GL_POLYGON_OFFSET_FILL);
+				}
+				current_depth_bias_enabled = p_bias.enabled;
+			}
+			if (p_bias.enabled && (current_depth_bias_constant_factor != p_bias.constant_factor || current_depth_bias_slope_factor != p_bias.slope_factor)) {
+				// Godot uses reverse Z. Positive material factors must decrease depth.
+				glPolygonOffset(-p_bias.slope_factor, -p_bias.constant_factor);
+				current_depth_bias_constant_factor = p_bias.constant_factor;
+				current_depth_bias_slope_factor = p_bias.slope_factor;
 			}
 		}
 

@@ -1,9 +1,10 @@
 {
   "schema_version": 1,
-  "reviewed_on": "2026-10-28",
+  "reviewed_on": "2026-11-06",
   "comparison_base": "f6ab5db28b9d989a3ae710d57410a123cf0e4b23",
-  "inventory_head": "9c605b09a54f08c28548d8b018ffe078761e1ec0",
+  "inventory_head": "a5046bf849bf62d4bf69a3fa1066c380174ca056",
   "baseline_note": "Local history immediately before the OSG integration; upstream remote provenance has not been independently verified. Includes subsequent committed, staged, unstaged and non-ignored untracked paths.",
+  "scope_note": "Only patches to existing Godot code and modules, including their associated tests and API documentation. Independent added modules, third-party sources and license registration, application projects, and inventory maintenance files are excluded.",
   "entries": [
     {
       "id": "GD-DPI-001",
@@ -11,39 +12,55 @@
       "paths": ["main/main.cpp", "platform/windows/display_server_windows.cpp", "doc/classes/ProjectSettings.xml", "doc/classes/Window.xml"]
     },
     {
-      "id": "GD-TILE-001",
-      "title": "Shared tiled mesh streaming, rendering and editor integration",
-      "paths": ["modules/tiled_mesh_3d/"]
-    },
-    {
-      "id": "GD-OSG-001",
-      "title": "Existing OSG parser integration and adaptation to shared tiled mesh runtime",
-      "paths": ["modules/osgdb/", "thirdparty/osgdb/", "thirdparty/README.md"]
-    },
-    {
-      "id": "GD-3DT-001",
-      "title": "3D Tiles format adapters, metadata, picking and ion acquisition",
-      "paths": ["modules/3dtiles/"]
-    },
-    {
       "id": "GD-DRACO-001",
-      "title": "Shared Draco decoder and GLTFDocument integration",
-      "paths": ["modules/draco/", "thirdparty/draco/", "modules/gltf/config.py", "modules/gltf/gltf_document.cpp", "modules/gltf/tests/test_gltf_draco.h", "modules/gltf/README.md", "thirdparty/README.md", "COPYRIGHT.txt"]
+      "title": "Optional compressed primitive decoding in Godot's existing glTF module",
+      "paths": ["modules/gltf/config.py", "modules/gltf/gltf_document.cpp", "modules/gltf/tests/test_gltf_draco.h", "modules/gltf/README.md"]
     },
     {
-      "id": "GD-USD-001",
-      "title": "Optional USD module and explicit OpenUSD SDK preparation (disabled by default)",
-      "paths": ["modules/usd/", "thirdparty/openusd/"]
-    },
-    {
-      "id": "GD-MAINT-001",
-      "title": "Local modification inventory and read-only coverage checker",
-      "paths": ["GODOT_SOURCE_CHANGES.md", "GODOT_SOURCE_CHANGES.json", "misc/scripts/check_local_engine_changes.py", "README.md"]
+      "id": "GD-DEPTH-BIAS-001",
+      "title": "Material hardware depth bias across Compatibility, Forward+ and Mobile",
+      "paths": [
+        "scene/resources/material.h",
+        "scene/resources/material.cpp",
+        "servers/rendering/rendering_server.h",
+        "servers/rendering/rendering_server.cpp",
+        "servers/rendering/rendering_server_default.h",
+        "servers/rendering/storage/material_storage.h",
+        "servers/rendering/dummy/storage/material_storage.h",
+        "servers/rendering/renderer_rd/storage_rd/material_storage.h",
+        "servers/rendering/renderer_rd/storage_rd/material_storage.cpp",
+        "servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h",
+        "servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.cpp",
+        "servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.h",
+        "servers/rendering/renderer_rd/forward_clustered/scene_shader_forward_clustered.cpp",
+        "servers/rendering/renderer_rd/forward_mobile/render_forward_mobile.h",
+        "servers/rendering/renderer_rd/forward_mobile/render_forward_mobile.cpp",
+        "servers/rendering/renderer_rd/forward_mobile/scene_shader_forward_mobile.h",
+        "servers/rendering/renderer_rd/forward_mobile/scene_shader_forward_mobile.cpp",
+        "drivers/gles3/storage/material_storage.h",
+        "drivers/gles3/storage/material_storage.cpp",
+        "drivers/gles3/rasterizer_scene_gles3.h",
+        "drivers/gles3/rasterizer_scene_gles3.cpp",
+        "drivers/d3d12/rendering_device_driver_d3d12.cpp",
+        "doc/classes/Material.xml",
+        "doc/classes/RenderingServer.xml"
+      ]
     }
   ],
   "excluded": [
+    {"path": "modules/tiled_mesh_3d/", "reason": "Independent added module; not a patch to an original Godot module."},
+    {"path": "modules/osgdb/", "reason": "Independent added module; not a patch to an original Godot module."},
+    {"path": "modules/3dtiles/", "reason": "Independent added module; not a patch to an original Godot module."},
+    {"path": "modules/draco/", "reason": "Independent added module; patches in the existing glTF module remain registered separately."},
+    {"path": "modules/usd/", "reason": "Independent added module; not a patch to an original Godot module."},
+    {"path": "thirdparty/", "reason": "Third-party sources, dependencies and their documentation are outside this inventory."},
+    {"path": "COPYRIGHT.txt", "reason": "Third-party license registration; not an engine implementation patch."},
+    {"path": "GODOT_SOURCE_CHANGES.md", "reason": "Inventory documentation; not an engine implementation patch."},
+    {"path": "GODOT_SOURCE_CHANGES.json", "reason": "Inventory scope and path registration; not an engine implementation patch."},
+    {"path": "misc/scripts/check_local_engine_changes.py", "reason": "Inventory maintenance tool; not an engine implementation patch."},
+    {"path": "README.md", "reason": "Inventory navigation link; not an engine implementation patch."},
     {"path": "projects/", "reason": "Application projects, including DigitalViewer scripts, tests and packaging; not engine source patches."},
     {"path": ".tmp_tests/", "reason": "Local temporary test harnesses; not a migration source."},
-    {"path": "TiledMeshInstance_PLAN.md", "reason": "Historical design plan; current implementation is inventoried in GD-TILE-001."}
+    {"path": "TiledMeshInstance_PLAN.md", "reason": "Historical design for an independent added module; outside the original-code patch scope."}
   ]
 }

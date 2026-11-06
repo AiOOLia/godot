@@ -36,6 +36,22 @@
 
 class RendererMaterialStorage {
 public:
+	struct DepthBias {
+		bool enabled = false;
+		// Positive factors move filled triangles away from the camera.
+		float constant_factor = 0.0f;
+		float slope_factor = 0.0f;
+
+		uint32_t hash(uint32_t p_hash) const {
+			p_hash = hash_murmur3_one_32(enabled, p_hash);
+			if (enabled) {
+				p_hash = hash_murmur3_one_float(constant_factor, p_hash);
+				p_hash = hash_murmur3_one_float(slope_factor, p_hash);
+			}
+			return p_hash;
+		}
+	};
+
 	virtual ~RendererMaterialStorage() {}
 
 	/* GLOBAL SHADER UNIFORM API */
@@ -81,6 +97,7 @@ public:
 	virtual void material_free(RID p_rid) = 0;
 
 	virtual void material_set_render_priority(RID p_material, int priority) = 0;
+	virtual void material_set_depth_bias(RID p_material, bool p_enabled, float p_constant_factor, float p_slope_factor) = 0;
 	virtual void material_set_shader(RID p_shader_material, RID p_shader) = 0;
 
 	virtual void material_set_param(RID p_material, const StringName &p_param, const Variant &p_value) = 0;

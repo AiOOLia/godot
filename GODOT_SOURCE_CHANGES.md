@@ -1,35 +1,31 @@
 # Godot 源码修改清单与升级记录
 
-更新：2026-10-28。本文记录这个仓库相对本地历史基线的引擎定制，用于后续升级、冲突处理和验收。**保留现有 Godot 源码实现的 Windows DPI 适配，不迁移为 GDExtension。**
+更新：2026-11-06。本文只记录对 **Godot 原有模块和代码**的修改，以及这些修改直接对应的测试、API 文档和升级要求。
 
-配套文件：[路径登记表](GODOT_SOURCE_CHANGES.json)、[只读检查工具](misc/scripts/check_local_engine_changes.py)、[DigitalViewer 实现及验证状态](projects/DigitalViewer/docs/desktop-v1.md)。
+独立新增模块、第三方库及其内部修复、应用代码、打包配置不列为源码修改条目；清单和检查工具本身也不列为引擎补丁。新增模块若改动了 Godot 原有代码，只登记原有代码中的接入点。相关外部能力只在说明补丁依赖时简要引用。
+
+配套文件：[路径登记表](GODOT_SOURCE_CHANGES.json)、[只读检查工具](misc/scripts/check_local_engine_changes.py)。
 
 ## 1. 基线与记录范围
 
-| 项目 | 本次盘点结果 |
+| 项目 | 盘点结果 |
 | --- | --- |
-| 引擎版本 | `version.py`：`4.7.3-rc`；运行时显示 `4.7.3.rc.custom_build.9c605b09a` |
-| 本地比较基线 | `f6ab5db28b9d989a3ae710d57410a123cf0e4b23`，2026-08-20；OSG 接入提交的父提交 |
-| 当前 HEAD | `9c605b09a54f08c28548d8b018ffe078761e1ec0`，2026-09-04，`支持 osg 数据加载` |
-| 已提交定制 | HEAD 中的 `modules/osgdb/`、`thirdparty/osgdb/` 和 `thirdparty/README.md` |
-| HEAD 之后的工作区 | DPI、通用瓦片、OSG 适配、3D Tiles、Draco/glTF、USD 等；包含修改、删除和未跟踪文件，尚未形成对应提交 |
-| 来源核实边界 | 上述哈希从本地 Git 历史读取；没有独立核验其与官方远端/tag 的对应关系。不能将当前 HEAD 当作干净官方基线 |
+| 引擎版本 | `version.py`：`4.7.3-rc`；最近构建为 `4.7.3.rc.custom_build.a5046bf84`，运行时版本字符串不能代替制品散列 |
+| 本地比较基线 | `f6ab5db28b9d989a3ae710d57410a123cf0e4b23`，2026-08-20；用于区分原有 Godot 代码与后续新增内容 |
+| 当前 HEAD | `a5046bf849bf62d4bf69a3fa1066c380174ca056`，2026-11-06，`新增cad模式` |
+| 已提交修改 | Windows DPI 补丁、原有 glTF 模块的可选压缩数据接入 |
+| 工作区修改 | 材质硬件 depth bias 及其文档；尚未提交 |
+| 来源边界 | 基线和 HEAD 从本地 Git 历史读取；没有独立核验其与官方远端 / tag 的对应关系 |
 
-本文按当前源码归类，不把既有模块的修改归功于本次清单整理，也不把源码存在等同于已发布。新增模块具体引入日期、提交号和历史测试结果无法从 Git 确认时，标为待补录。
-
-`projects/` 下的应用、GDScript、测试、打包配置单独维护，不算引擎核心补丁；它们与引擎的配合点仍在对应条目中记录。临时 `.tmp_tests/` 和历史计划 `TiledMeshInstance_PLAN.md` 不作为升级移植依据。Git 忽略的 SDK、缓存、预编译库和构建产物也不由路径检查工具备份或验收。
+登记原有代码的精确文件路径，不使用整个 `modules/`、`scene/`、`servers/` 或 `drivers/` 目录覆盖未知修改。原有模块内部为补丁添加的关联测试文件一并登记。JSON 的 `excluded` 仅声明检查范围，不构成修改条目；不改动比较基线来隐藏遗漏。
 
 ## 2. 修改索引
 
-| 编号 | 修改 | 类型与状态 | 依赖 / 升级关注点 |
+| 编号 | 修改 | 状态 | 升级关注点 |
 | --- | --- | --- | --- |
-| [GD-DPI-001](#gd-dpi-001) | Windows 每显示器 DPI、跨屏窗口与事件 | 核心补丁；项目可选开启；Windows 已验证 | `Main` 设置注册、Windows `DisplayServer`、Window 信号；优先检查上游是否已有等价实现 |
-| [GD-TILE-001](#gd-tile-001) | 通用瓦片流送与渲染框架 | 新增原生模块；已供应用使用；未提交 | 格式注册、后台任务、RenderingServer、编辑器 API |
-| [GD-OSG-001](#gd-osg-001) | 现有 OSG 接入转为通用框架适配器 | 已提交基础 + 工作区重构 | 依赖 GD-TILE-001；保留现有解析库 |
-| [GD-3DT-001](#gd-3dt-001) | 3D Tiles 格式、内容与 ion 接入 | 新增原生模块；部分格式已验证；未提交 | 依赖 GD-TILE-001，Draco 为可选依赖 |
-| [GD-DRACO-001](#gd-draco-001) | Draco 解码与 glTF 接入 | 新模块 + 原有 glTF 修改 + 第三方库；未提交 | glTF accessor API、属性类型、模块关闭分支、许可证 |
-| [GD-USD-001](#gd-usd-001) | USD 导入与 OpenUSD SDK 准备 | 既有可选模块；默认关闭；未作为本版应用验收 | SDK ABI、异常、共享库部署；不得因升级自动启用 |
-| [GD-MAINT-001](#gd-maint-001) | 本清单、登记表和检查命令 | 维护工具；不改变运行时 | 更新登记基线与条目，防止漏记 |
+| [GD-DPI-001](#gd-dpi-001) | Windows 每显示器 DPI、跨屏窗口与事件 | 已提交；项目开关默认关闭；Windows 已验证 | 设置注册、DisplayServer、原生窗口矩形、Window 信号 |
+| [GD-DRACO-001](#gd-draco-001) | 原有 glTF 模块接入可选压缩图元解码 | 已提交；只登记 `modules/gltf/` 中的 4 个文件 | 可选依赖、accessor 类型与索引校验、关闭依赖时的行为 |
+| [GD-DEPTH-BIAS-001](#gd-depth-bias-001) | 材质硬件深度偏移 | 未提交；默认关闭；Windows 三种渲染器已验证 | 延迟 RID、材质存储、管线缓存、深度预绘制、GL 状态恢复 |
 
 ## GD-DPI-001
 
@@ -58,185 +54,104 @@
 - 如果删除该补丁，同步删除自定义设置与文档，并调整应用对 Windows 自动调整矩形的假设；先通过等价跨屏测试再标记“被上游替代”。
 - 重建 editor 与导出模板，并重新导出应用；不能只更新 PCK 来分发引擎改动。
 
-**提交 / 上游状态：**当前为工作区补丁，未记录上游 PR；尚未认定任何上游版本已覆盖它。
-
-## GD-TILE-001
-
-**目的与范围：**新增 [modules/tiled_mesh_3d/](modules/tiled_mesh_3d/)，从 OSG 专用实现抽出格式无关的 `TiledMeshInstance3D`、`TiledOriginController3D`、选项/格式注册、请求队列、图片解码、CPU mesh 打包、主线程上传、LOD、取消与代次隔离、预算统计和编辑器预览。公共接口说明见 [ARCHITECTURE.md](modules/tiled_mesh_3d/ARCHITECTURE.md)。
-
-**重点文件：**`tiled_mesh_format.{h,cpp}`、`tiled_mesh_format_registry.{h,cpp}`、`tiled_mesh_instance_3d.{h,cpp}`、`tiled_mesh_data_request_queue.*`、`tiled_mesh_data_source.*`、`tiled_mesh_image_decode_queue.*`、`tiled_mesh_mesh_pack_queue.*`、`tiled_origin_controller_3d.*`、`editor/`、`register_types.cpp`、`config.py`、`SCsub`、`doc_classes/`。
-
-**构建边界：**当前 `config.py` 要求线程、启用 3D，允许 Windows / LinuxBSD / Web。这只是编译条件，不是三个平台均已验收。必须与 OSG 适配迁移一起处理，避免同名类重复注册。
-
-**升级处理：**核对 `RenderingServerTypes::SurfaceData` / RID、Mesh 数组布局、主线程资源生命周期、线程退出、HTTPClient、ClassDB、编辑器插件与 Gizmo 接口。继续维持 CPU 数据在工作线程、GPU 提交在主线程，以及旧 generation 不得发布结果的约束。多视口的原生流送资源共享仍未完成，不能仅因编译成功认定已解决。
-
-**验证：**`tests/test_tiled_mesh_format.h`、`tests/test_tiled_mesh_http.h` 覆盖注册、SurfaceData、点几何、异步队列、流送和 HTTP。应用集成覆盖加载、显隐、重载、拾取和释放；本次盘点未重新运行所有 C++ 测试。`TiledMeshInstance_PLAN.md` 是历史计划，不代表已完成事项。
-
-## GD-OSG-001
-
-**基础：**现有 OSG 解析库已完整提供，继续沿用 `thirdparty/osgdb/`，不下载、替换或重写解析库。基础接入来自已提交的 `9c605b09a54f08c28548d8b018ffe078761e1ec0`。`thirdparty/README.md` 记录为 OpenSceneGraph 3.7.x 源码快照，未给出精确上游 commit；升级前应补齐来源信息或保留当前 Git tree 作为可复现依据。
-
-**本地重构：**`modules/osgdb/` 依赖 GD-TILE-001，新增 `osg_tiled_mesh_format.{h,cpp}` 和 `OsgTiledMeshOptions`，`register_types.cpp` 改为注册格式加载器。转换器、图片读取器和解析队列改用通用文档/数据源；保留 LOD / replacement group 归属；新增基于 `PackedByteArray` 的输入流以减少解析前复制。`SCsub` 不再编译旧 OSG 专用编辑器目录。
-
-以下是相对当前 HEAD 的删除/迁移关系，**不是丢弃对应能力，也不是逐字节重命名**：
-
-| 原 `modules/osgdb/` 路径 | 当前对应实现 |
-| --- | --- |
-| `tiled_mesh_instance_3d.{h,cpp}` | `modules/tiled_mesh_3d/tiled_mesh_instance_3d.{h,cpp}` |
-| `tiled_origin_controller_3d.{h,cpp}` | `modules/tiled_mesh_3d/tiled_origin_controller_3d.{h,cpp}` |
-| `osg_data_request_queue.{h,cpp}` | `modules/tiled_mesh_3d/tiled_mesh_data_request_queue.{h,cpp}` |
-| `osg_data_source.{h,cpp}` | `modules/tiled_mesh_3d/tiled_mesh_data_source.{h,cpp}` |
-| `osg_image_decode_queue.{h,cpp}` | `modules/tiled_mesh_3d/tiled_mesh_image_decode_queue.{h,cpp}` |
-| `osg_tile_document.h` | `modules/tiled_mesh_3d/tiled_mesh_format.h` 的通用数据结构 |
-| `editor/tiled_mesh_instance_3d_editor_plugin.{h,cpp}` | `modules/tiled_mesh_3d/editor/` |
-| `doc_classes/TiledMeshInstance3D.xml`、`TiledOriginController3D.xml` | `modules/tiled_mesh_3d/doc_classes/` |
-
-**升级处理：**共同移植 OSG 适配器与通用框架；保留静态 reader/serializer 注册、`OSG_LIBRARY_STATIC` / `OSGDB_LIBRARY_STATIC` / zlib 配置；只使用源码构建，不把目录内预编译库作为输入。OSG 对象解析/析构继续留在串行解析线程，不能未经验证改成多线程解析。性能说明见 [PERFORMANCE_ISSUES.md](modules/osgdb/PERFORMANCE_ISSUES.md)，它包含历史命名和待办，不是性能验收证据。
-
-**验证：**`modules/osgdb/tests/test_osg_scene_converter.h` 中的 `[OSGDB]` 测试含 ASCII、OSGB、zlib、PagedLOD、fallback、取消和 HTTP；DigitalViewer 已验证 OSG2 ASCII 几何驻留与拾取。未重新验收所有 OSG 格式。
-
-**2026-10-28 传统 OSG 文本修复：**武当山 `Production_2.osg` 使用 `PagedLOD { ... }` 传统语法，既有构建只接入 OSG2 对象 serializers，传统 reader 的 DotOsgWrapper 注册为空，因此入口报错。另有未加引号的中文 `DatabasePath` 被分词器截断，以及 Windows ANSI/GBK 路径误按 UTF-8 解码的问题。
-
-| 文件 / 锚点 | 修改与升级保留要求 |
-| --- | --- |
-| `thirdparty/osgdb/src/osgDB/deprecated-dotosg/osg/` | 从本机已有 OpenSceneGraph 3.7.0-rc1 源码补接 22 个传统对象 wrapper/helper `.cpp` 与 `Matrix.h`；未下载或替换现有库。`SOURCE.json` 记录原文件 SHA256、来源和构建适配，`LICENSE.txt` 保留上游许可证。上游 commit 未知。仅静态网格/材质/纹理/变换/LOD/ProxyNode 子集 |
-| `modules/osgdb/SCsub`、`osg_static_init.cpp` | 编译上述源码并显式引用 `USE_DOTOSGWRAPPER`，避免静态链接裁掉注册；OSG2 注册保留 |
-| `thirdparty/osgdb/src/osgDB/FieldReader.cpp` / `_readField` | 两个分隔符表索引转为 unsigned byte，消除非 ASCII 字节引起的负下标越界和路径截断；UTF-8 与 ANSI 均需回归 |
-| `modules/osgdb/osg_scene_converter.cpp` | Windows 路径先严格验证 UTF-8，仅非法时按系统 ANSI code page 解码（中文系统为 GBK）；`DeferredOsgResources` 保留图片 URI、延迟 ProxyNode 外部引用，文件访问仍走异步队列；失败时保留首选 reader 的具体错误，不被备用 reader 的 `file not handled` 覆盖 |
-| `modules/osgdb/tests/test_osg_scene_converter.h` | 增加传统 reader/writer 和 ProxyNode 延迟引用测试；本轮未重建原生单测 editor，应用正例使用新 release 引擎验证 |
-
-应用新增 `tests/desktop_osg.gd` 和生成式三角形 fixture，验证无引号中文路径的 UTF-8/本地编码、纹理队列、PagedLOD 与 ProxyNode。打包脚本随包提供 `OSG-LICENSE.txt`。实际数据仍缺少其引用的 `Production_2_0.jpg`，这是最低 LOD 的源纹理缺失，不能将几何加载成功表述为数据依赖完整；同目录 `.osgb` 含内嵌纹理且已验证。原始数据未修改。升级时保留来源记录、静态注册、串行解析及延迟资源约束，并同步重建 EXE/PCK。
-
-**2026-10-28 空 OSGB 瓦片修复：**桃园 `Tile_314341526340_L10_4261570533.osgb` 只有 215 字节，读取成功后为不含子节点/几何的 `osg::Group`，仅含渲染状态。`modules/osgdb/osg_scene_converter.cpp` 原来将所有无几何/外链场景作为损坏文件拒绝；现在通过 `is_empty_container_tree` 识别仅由空 Group/Geode 构成的节点树，返回合法空文档。仍经原 reader 完整读取，不将存在但不支持的 drawable/primitive 当作空瓦片；截断 OSGB 的读取错误仍失败。通用流送已有空文档驻留与 LOD 完成语义，本次不修改通用调度器、`FieldReader.cpp` 或第三方解析库。
-
-升级保留此区分，并回归空子瓦片替换自身粗层、相邻几何保留、拉远恢复粗层和截断/不支持图元拒绝。新增原生单测覆盖 OSG2 文本、普通及压缩 OSGB 空节点，尚未重建单测 editor；实际执行的是新 release 引擎的应用回归（生成式 OSGB v91 和传统 OSG）。截图原文件已为 Resident、0 渲染实例、0 失败；其所属入口 30 秒旋转缩放验证失败内容为 0，报告见应用文档。原数据未修改。
-
-## GD-3DT-001
-
-**范围：**新增 [modules/3dtiles/](modules/3dtiles/)，通过 `Tiles3DFormatLoader` / `Tiles3DOptions` 注册到通用框架。关键文件为 `tiles_3d_format.*`、`tiles_3d_parser.h`、`parser/`、`register_types.*`、`SCsub`、`config.py` 和 `doc_classes/Tiles3DOptions.xml`。
-
-**现有实现：**显式 tileset、变换/包围体、GLB/glTF、B3DM、CMPT、I3DM、PNTS，批次信息及拾取所需数据、ion endpoint 获取与凭据作用域。`parser/i3dm/`、`parser/pnts/` 和相应测试已存在，不能被旧 README 中“拒绝 i3dm/pnts”的文字覆盖；该 README 有尚待同步的旧限制描述。
-
-**依赖与边界：**强依赖 GD-TILE-001，可选依赖 GD-DRACO-001；实际可编译平台受两者 `config.py` 的交集约束，不能只看本模块列出的六平台。不是完整 Cesium SDK；隐式切片、影像、地形与真实 ion/TLS 服务不因这些解析器存在而视为已验收。
-
-**升级处理：**检查 WorkerThread / 容器 API、Image 解码、网络取消与认证重定向范围、double 源坐标到局部 Vector3 转换、可选 Draco 编译开关。保留子内容相对 URI、批次编号、点几何和模型实例语义。
-
-**验证：**`modules/3dtiles/tests/test_tiles_3d.h` 的 `[3DTiles]`；应用 `projects/DigitalViewer/tests/desktop_tiles.gd` 已验证 B3DM/I3DM/PNTS/CMPT 驻留及点拾取。真实 ion 凭据服务未验收。模块 README 中示例测试命令应使用新编译的测试引擎，不应复用旧预置 editor。
-
-**2026-10-28 B3DM 兼容修复：**ContextCapture Center edition Update 16 的武当山数据部分文件止于完整 GLB 的 4 字节边界，未补齐 B3DM 最后的 8 字节填充，旧解析器报 `Invalid standard version 1 tile header or alignment.`。
-
-| 文件 / 锚点 | 修改与升级保留要求 |
-| --- | --- |
-| `parser/tile_table.h` / `LegacyTile::load` | 增加默认关闭的 `p_allow_unpadded_glb`；仅允许调用方放宽容器末尾到 4 字节，表段仍要求 8 字节边界，长度一致与越界检查保留 |
-| `parser/b3dm/b3dm_parser.cpp` / `Decoder::decode_b3dm` | 仅 B3DM 开启兼容；非 8 字节文件必须恰好止于完整 GLB 声明长度，继续验证 GLB v2 与 chunk；I3DM/PNTS/CMPT 不放宽 |
-| `tests/test_tiles_3d.h` | 新增缺少尾部填充的正例及七种长度/截断/表段/GLB 损坏反例；本轮未重建 C++ 单测 editor，等价正反例已通过新 release 引擎的应用测试 |
-
-路径相对 `modules/3dtiles/`，归入现有 GD-3DT-001，无新增核心补丁。升级需迁移此兼容行为及边界回归，并重新编译模板、同步导出 EXE/PCK；不能只替换应用脚本。实际数据验证与报告见 [desktop-v1.md](projects/DigitalViewer/docs/desktop-v1.md)。原始数据未修改。
+**提交 / 上游状态：**DPI 补丁已随本地 `16501e75df`（`多显示器 dpi 适配`）提交，未记录上游 PR；尚未认定任何上游版本已覆盖它。
 
 ## GD-DRACO-001
 
-**目的：**给通用 3D Tiles 路径与原生 `GLTFDocument` 提供 `KHR_draco_mesh_compression` 解码。
+**目的：**修改 Godot 原有 `GLTFDocument` 导入流程，支持可选的 `KHR_draco_mesh_compression` 图元解码。本条保留既有编号，只记录原有 glTF 模块的接入改动，不登记独立解码模块或第三方库实现。
 
-| 路径 | 修改内容 |
+| 原有模块中的文件 | 修改内容 |
 | --- | --- |
-| `modules/draco/` | `DracoDecoder` 封装、限额/错误检查、构建与测试；`is_enabled()` 默认开启 |
-| `thirdparty/draco/` | Draco 1.5.7，来源 commit `8786740086a9f4d83f44aa83badfbea4dce7a1b5`；构建只列出解码依赖，目录中的其它源码不代表已启用 |
-| `modules/gltf/config.py` | 添加可选 Draco 依赖 |
-| `modules/gltf/gltf_document.cpp` | `_parse_meshes` 解压 primitive，按 unique ID 映射属性、校验 accessor、转换索引；开启模块时声明支持扩展，关闭时明确拒绝相关压缩内容 |
-| `modules/gltf/tests/test_gltf_draco.h` | 通过官方压缩 GLB fixture 验证 GLTFDocument 路径 |
-| `modules/gltf/README.md`、`thirdparty/README.md`、`COPYRIGHT.txt` | 能力说明、版本来源、Apache-2.0 版权登记 |
+| [modules/gltf/config.py](modules/gltf/config.py) | 为 glTF 声明可选解码依赖，保持可在依赖关闭时编译 |
+| [modules/gltf/gltf_document.cpp](modules/gltf/gltf_document.cpp) | `_parse_meshes` 在模块开关下调用解码接口，按属性 unique ID 映射到 glTF 语义；校验 accessor 的类型、分量数、normalized、count 和索引，转换为原有 accessor 流程；`get_supported_gltf_extensions_hashset` 仅在依赖开启时声明扩展支持 |
+| [modules/gltf/tests/test_gltf_draco.h](modules/gltf/tests/test_gltf_draco.h) | 原有模块内新增的关联测试，通过压缩 GLB fixture 验证 GLTFDocument 接入路径 |
+| [modules/gltf/README.md](modules/gltf/README.md) | 说明原有 glTF 导入器在依赖启用时支持该压缩扩展 |
 
-**升级处理：**优先确认上游是否已支持 Draco；若替换实现，保留等价属性/索引/限额回归。重点核对 accessor 的组件类型、normalized/count 校验和编码 API，不能只合并 include 与扩展名列表。测试 `module_draco_enabled=yes/no` 两种构建，确认未压缩 glTF 不受影响；升级第三方版本时同步 `SCsub` 源文件列表、feature header 和许可证。
+**兼容行为：**开启 `MODULE_DRACO_ENABLED` 时接通解码；关闭时明确拒绝相关压缩内容，普通未压缩 glTF 保持原导入路径。
 
-**验证：**`modules/draco/tests/test_draco_decoder.h` 的 `[Draco]`、glTF 的 `*KHR_draco*` 测试及 3D Tiles Draco case 已提供；本次清单整理未重新执行这些 C++ 测试，不能用普通 glTF 应用检查代替压缩格式验收。
+**升级处理：**优先检查目标 Godot 是否已提供等价扩展支持。迁移时核对 accessor 编解码 API、属性类型与 unique ID 映射、索引和限额校验，并覆盖 `module_draco_enabled=yes/no` 两种构建。若由上游替代，保留等价的开启 / 关闭行为和压缩图元回归后记录替代版本。
 
-## GD-USD-001
+**验证边界：**上述 glTF 测试已存在；本轮清单整理未重建或运行 C++ 原生测试，不以普通 glTF 加载成功代替压缩格式验收。
 
-**范围与状态：**工作区已有 `modules/usd/` 和 `thirdparty/openusd/` 准备脚本，当前 `module_usd_enabled` 默认关闭。包括 `USDDocument`、编辑器导入器、静态网格测试及 SDK 检查；不属于 DigitalViewer 本版已接通能力。本次清单只登记，不启用、不下载 SDK。
+## GD-DEPTH-BIAS-001
 
-**依赖：**OpenUSD `v24.08`，commit `59992d2178afcebd89273759f2bddfe730e59aa8`，记录于 `modules/usd/config.py` 与 `thirdparty/openusd/build.py`。SDK 获取/预构建需显式执行；SCons 不联网、不自动构建依赖。源代码、install 和 probe-build 目录由模块自己的 `.gitignore` 排除。
+**日期 / 状态：**2026-11-06；本地保留的核心补丁，基于 `a5046bf849bf62d4bf69a3fa1066c380174ca056` 后的工作区，尚未提交，未记录上游 issue / PR。本次没有升级 Godot。
 
-**升级处理：**核对编辑器 importer API、`USDDocument` 与 OpenUSD ABI；Windows 目前要求 MSVC、`use_static_cpp=no`、`debug_crt=no`、匹配 `/MD` 的共享 monolithic SDK。异常配置限定在模块构建环境；最终应用还需部署 SDK 共享库。Web 不支持。保留默认关闭，除非另行完成启用与平台验收。
+**触发问题 → 改后行为：**CAD 离散面和独立边线共面时，深度竞争使边线断续。RenderingDevice 已有硬件 depth bias 光栅化字段，但场景材质没有对应设置；OpenGL 的 `glPolygonOffset` 只影响填充三角面，不能直接偏移独立线段。本补丁从材质接通硬件管线参数，供应用将面深度稍微推远，边线保留原始坐标和正常深度测试。
 
-**验证入口：**`modules/usd/tests/test_config.py`、`thirdparty/openusd/test_build.py`、`modules/usd/tests/test_usd_document.h`。没有将它们计入当前 DigitalViewer 的通过数量。
+**公共 API 与默认值：**
 
-## GD-MAINT-001
+- `Material.depth_bias_enabled = false`、`depth_bias_constant_factor = 0.0`、`depth_bias_slope_factor = 0.0`。提供 setter/getter，支持 Inspector、GDScript、资源保存和复制；面向 `BaseMaterial3D` 及 spatial `ShaderMaterial`，其他材质类型不显示 Inspector 选项。
+- `RenderingServer.material_set_depth_bias(material, enabled, constant_factor, slope_factor)` 同步更新后端存储，拒绝非有限参数。材质 RID 延迟创建、运行时切换及 shader data 重建均保留设置。
+- 正值将填充三角面推远，负值拉近；各渲染器按 reverse Z 转换符号。默认关闭保持原材质行为。相机颜色、深度预绘制和运动矢量使用一致设置；阴影贴图、材质烘焙、SDF 生成、点、独立线段和 wireframe 不应用该偏移。
 
-本次新增本文、`GODOT_SOURCE_CHANGES.json`、`misc/scripts/check_local_engine_changes.py`，在根 README 与 DigitalViewer README 增加入口。它们不改变引擎或应用运行行为。
+**引擎文件：**JSON 按下表逐文件登记，共 24 个精确路径；没有扩大目录覆盖范围。
 
-在仓库根目录执行（Python 3；本机可用 `D:/Program Files/Python312/python.exe`）：
+| 文件 | 关键符号 / 修改及迁移要求 |
+| --- | --- |
+| `scene/resources/material.h`、`scene/resources/material.cpp` | `Material::_set_material`、`_update_depth_bias`、`_bind_methods`、`_validate_property`；公共参数、默认值、Inspector、保存、有限值校验和惰性 RID 初始化时同步 |
+| `servers/rendering/rendering_server.h`、`rendering_server.cpp`、`rendering_server_default.h`（同目录） | `material_set_depth_bias` 抽象接口、ClassDB 绑定及 `FUNC4` 命令队列转发；脚本与渲染线程契约需一起迁移 |
+| `servers/rendering/storage/material_storage.h`、`servers/rendering/dummy/storage/material_storage.h` | `RendererMaterialStorage::DepthBias` 与参数 hash、存储抽象及 dummy 空实现；无头构建仍须可用 |
+| `servers/rendering/renderer_rd/storage_rd/material_storage.h`、`material_storage.cpp`（同目录） | `Material` / `MaterialData` 保存 bias，shader data 创建及重建时复制，setter 发出材质依赖变更 |
+| `servers/rendering/renderer_rd/forward_clustered/render_forward_clustered.h`、`render_forward_clustered.cpp`、`scene_shader_forward_clustered.h`、`scene_shader_forward_clustered.cpp`（同目录） | Forward+ 的 `SurfacePipelineData`、`PipelineKey::hash`、`_create_pipeline`、绘制和预编译；bias 纳入缓存与 ubershader，深度预绘制即使用共享 depth shader 也取原始材质参数，阴影与烘焙分支排除偏移 |
+| `servers/rendering/renderer_rd/forward_mobile/render_forward_mobile.h`、`render_forward_mobile.cpp`、`scene_shader_forward_mobile.h`、`scene_shader_forward_mobile.cpp`（同目录） | Mobile 同步接通材质参数、管线 key/hash、预编译、ubershader 和 camera / shadow pass 区分 |
+| `drivers/gles3/storage/material_storage.h`、`material_storage.cpp`（同目录） | GLES3 材质 / material data 保存与同步，shader data 重建后恢复参数并通知依赖 |
+| `drivers/gles3/rasterizer_scene_gles3.h`、`rasterizer_scene_gles3.cpp`（同目录） | `SceneState::set_gl_depth_bias`、`reset_gl_state`、`_render_list_template`；缓存 `glPolygonOffset` 参数，控制 `GL_POLYGON_OFFSET_FILL`，阴影禁用，每个 render list 结束恢复，避免泄漏到后续材质、天空、画布和 blit |
+| `drivers/d3d12/rendering_device_driver_d3d12.cpp` | `render_pipeline_create` 补回 `else`，修正原先设置 bias 后立即无条件清零的问题；本次 D3D12 未编入交付程序，也未实机验收 |
+| `doc/classes/Material.xml`、`doc/classes/RenderingServer.xml` | 公共属性、方法、符号方向、影响范围及精度限制说明 |
+
+**应用配合：**[brep_scene.gd](projects/DigitalViewer/scripts/desktop/brep_scene.gd) 在导入结果含有效边线时，仅给三角面材质开启 `constant_factor = 0.5`、`slope_factor = 0.5`；没有边线时保持关闭。边线仍使用 `ArrayMesh / PRIMITIVE_LINES + StandardMaterial3D`。桌面视口在 `view_scene.gd` 创建相机时统一设置 `near = 0.2`，已移除按导航距离、图层类型和显隐切换近裁剪面的逻辑；远裁剪策略保持原值。未修改网格坐标或 BREP/OCC 解析。专项 [material_depth_bias.gd](projects/DigitalViewer/tests/material_depth_bias.gd) 验证硬件偏移，`brep_smoke.gd` 检查实际相机的固定近裁剪面；`Test-Desktop.ps1 -RenderingMethod` 可选择三种渲染器。应用文件归入 `projects/` 排除项，详细记录见 [brep-preview.md](projects/DigitalViewer/docs/brep-preview.md#面与边线的硬件深度偏移)。
+
+**已执行验证与制品：**Windows x86_64、NVIDIA RTX 3080 Laptop，OpenGL 3.3 Compatibility 与 Vulkan 1.3 Forward+ / Mobile；重建 dev editor、CAD/ALL `template_release`，重新导出正式包和验证包。
+
+- 三种渲染器在开启 / 关闭深度预绘制时分别通过 30 项专项检查；覆盖资源往返、延迟 RID、动态开关、共享 shader 材质隔离、RenderingServer 更新、shader data 重建、独立线段不受影响及阴影不变。透视 / 正交、1 / 10000 倍尺度的共面线连续率为 100%，遮挡样本无透线，90 个阴影采样不变。合成模型面宽 8，遮挡间隔 0.05；这不保证任意更薄结构。
+- CAD 源码及导出 OpenGL、CAD 导出 Forward+、ALL 源码及导出 Forward+ 的真实 CNC BREP 回归各通过 390 项；数据仍使用 `.geom`，232,383 个三角形、281,013 条线，`missing_faces = 0`、`occ_reconstructed = false`。CAD/ALL 导出配置分别通过 68/59 项；EXE/PCK 与应用脚本散列已核对。
+- `git diff --check`、C++ clang-format 检查及 Material / RenderingServer XML 文档生成检查通过。本次没有构建或运行 C++ 原生单元测试。执行日志在 `.tmp_tests/depth-bias-*.log`，该临时目录不作为升级移植源。
+- CNC 透线修正的动态裁剪版本曾通过三种渲染器各 70 项和 CAD/ALL CNC 各 431 项回归；该动态策略现已按要求移除，统一固定 `near = 0.2`。这些历史结果不能代表当前固定近裁剪面在任意尺度下的遮挡保证。应用修改不新增 Godot 原有源码路径。
+- 额外运行的 ALL 完整桌面套件未全部通过，包含属性面板旧断言、OSG 拾取、HTTP 会话和 DPI 测试访问旧 `_menu`；原有未修改编辑器也复现这些失败，不能将专项通过表述为完整业务套件全部通过。
+
+复测导出程序（先使用新引擎和对应模板生成 `Windows Validation` 包）：
+
+```powershell
+.\projects\DigitalViewer\tools\Test-Desktop.ps1 -Profile CAD -BRepOnly -Graphics -RenderingMethod gl_compatibility -Pack -Engine ./projects/DigitalViewer/build/validation/CAD/DigitalViewer.exe
+.\projects\DigitalViewer\tools\Test-Desktop.ps1 -Profile ALL -BRepOnly -Graphics -RenderingMethod forward_plus -Pack -Engine ./projects/DigitalViewer/build/validation/ALL/DigitalViewer.exe
+# 将 RenderingMethod 改为 mobile 可运行 Mobile 路径；加入 -Dataset <model.json> 可加载真实数据。
+```
+
+**升级冲突点与迁移 / 移除条件：**优先检查目标上游是否已有材质级硬件偏移接口；如有，保留 API 默认关闭及符号语义，调整应用调用，验证等价行为后记录替代版本。重点核对 Material RID 初始化、RenderingServer 转发、dummy 与两个 material storage、管线 key/hash / 预编译 / ubershader 的参数完整性、共享 depth shader 的原材质参数、camera 与 shadow/bake pass 区分及 GL 状态恢复。RD 底层字段已存在，未增加 Vulkan / Metal 驱动接口；不要将场景偏移误写成共享 shader 状态，也不要把独立线段当作 OpenGL polygon offset 的作用对象。必须同步重编 editor / 模板并导出 EXE/PCK，不能只更换 PCK。
+
+**未验证与限制：**D3D12 修复仅作源码检查，当前构建 `d3d12=no`；Metal、其他平台 / 显卡及所有 MSAA 组合未实机验证。硬件偏移并非世界距离，受深度格式及投影影响；过大的常量、坡度和掠射角仍可能让极薄结构后的线透出。shader 主动写 `DEPTH` 可能覆盖光栅化深度，面 / 边离散数据不重合也需另行处理。
+
+## 3. 清单维护与检查
+
+每次修改 Godot 原有代码时，同步更新对应条目与 JSON 精确路径，记录公共 API / 默认值、修改锚点、提交、升级冲突点、实际执行的验证和未验证项。应用配合和验收证据可以引用，不将应用文件登记为引擎补丁。
+
+独立新增模块及 `thirdparty/` 使用明确的目录排除规则；原有 `modules/gltf/` 继续逐文件检查。清单、工具、导航文档和许可证登记也列为排除项，避免将维护材料计入引擎代码修改数量。
+
+在仓库根目录执行：
 
 ```powershell
 & 'D:/Program Files/Python312/python.exe' misc/scripts/check_local_engine_changes.py
 & 'D:/Program Files/Python312/python.exe' misc/scripts/check_local_engine_changes.py --json
 ```
 
-工具只读 Git：比较登记基线到完整工作区的已跟踪差异，并加入未被忽略的未跟踪文件。输出每项的路径数量；`--json` 输出完整文件归属。退出码 `0` 表示所有路径已登记或明确排除，`1` 表示有漏记路径，`2` 表示配置/Git 错误。`--base <commit>` 可临时更换比较基线，不修改登记表。
+检查工具只读 Git，比较基线到完整工作区的已提交、暂存和未暂存差异，再加入未被忽略的未跟踪文件。退出码 `0` 表示路径均已登记或明确排除，`1` 表示有漏记，`2` 表示配置 / Git 错误；`--base <commit>` 可临时选择比较基线。工具只检查路径归属，不判断修改语义、测试结果或制品一致性；被 Git ignore 的内容不在扫描范围内。
 
-**限制：**它检查路径归属，不检查修改含义、同一文件新增功能是否已写入说明、二进制是否匹配或代码正确性。自定义模块按目录归类，新增模块内部文件不会触发漏记，但仍须更新说明。`main/main.cpp` 等上游文件按精确路径登记，不用整个 `main/` 或 `platform/` 目录掩盖新补丁。`--json` 可以核查显式排除项。被 Git ignore 的文件不在扫描范围内。
+本次清理后，修改条目仅保留 DPI 的 4 个文件、glTF 的 4 个文件及 depth bias 的 24 个文件，共 32 个文件。清理不改变引擎实现和构建产物。
 
-**本次工具验证：**实际工作区覆盖检查通过，登记 1,220 个差异路径、明确排除 258 个应用/临时路径；共享文件可归属多个条目，分项数量不能直接相加。另用内存中的登记表副本移除 DPI 条目，成功检出四个漏记文件；验证了目录边界匹配、无效基线报错和文档本地链接。数量仅代表本次盘点，后续以命令输出为准。
+## 4. 升级处理
 
-## 3. 后续修改的维护规则
+- [ ] 保存已提交、未提交和未跟踪的修改，记录旧 / 新完整 commit、编译器 / SDK、构建参数及制品散列。
+- [ ] 对每项原有代码补丁判断“保留 / 重写 / 上游已覆盖 / 停用”；按符号和行为迁移，不按旧行号贴补丁。
+- [ ] 核对公共 API、默认值、线程与资源生命周期、各渲染后端和功能开关关闭路径。
+- [ ] 使用目标源码重建 editor 与实际交付的导出模板，运行对应原生 / 应用测试，分别记录通过项和剩余失败。
+- [ ] 用新模板重新导出 EXE/PCK，核对制品清单和应用调用；引擎补丁不能仅靠更换 PCK 分发。
+- [ ] 更新日期、HEAD、路径登记与升级记录；变更比较基线前保留旧记录，重新运行覆盖检查。
 
-每次引擎修改都与清单更新一起提交：
+## 5. 记录
 
-1. 复用或新增稳定编号，写清“触发问题 → 改后行为”，列出文件、关键符号、设置默认值、依赖与兼容影响。
-2. 更新 JSON 路径登记，执行检查工具。应用代码留在应用文档，但涉及引擎契约的配合项需交叉引用。
-3. 写明实际执行的测试、平台/构建类型、结果及尚未验证项；测试存在不等于测试通过。
-4. 提交完成后补录 commit / PR。按功能拆分补丁，避免将 DPI、第三方更新和瓦片架构混在一个升级提交中；同一文件可属于多个条目。
-5. 上游已有等价能力时记录替代版本、移除的本地实现和等价回归结果，保留历史编号，不直接删除历史记录。
-
-新增条目模板：
-
-```text
-编号 / 标题：GD-XXX-001
-状态：待实现 / 本地保留 / 待迁移 / 被上游替代 / 停用
-比较基线与引入 commit：
-问题与期望行为：
-文件、关键符号、公共 API / 默认值：
-依赖及应用配合：
-升级冲突点与迁移/移除条件：
-已执行验证（平台、构建、命令、结果）：
-未验证项 / 已知限制：
-上游 issue / PR / 替代版本：
-```
-
-## 4. 升级 Godot 的执行清单
-
-- [ ] 冻结并提交本地定制源码、第三方源码和清单，记录当前 commit、编译器/SDK、构建参数及制品散列。**当前有大量未跟踪新模块，`git diff` 或 `format-patch` 不会自动保存它们。**不能只备份 tracked diff 就开始迁移。
-- [ ] 在独立分支/工作区对齐目标 Godot commit，核实官方来源；记录旧/新基线。不要把当前包含 OSG 的 HEAD 当成上游原版。
-- [ ] 逐项判断“保留 / 重写 / 上游已覆盖 / 暂停”，填写下方升级记录。一般先迁移通用框架，再迁移 OSG / 3D Tiles；Draco 与 glTF 一起处理；DPI 独立处理；USD 保持关闭。
-- [ ] 检查所有删除/迁移文件，避免同时保留旧 OSG 节点与新通用节点；同步 ClassDB、依赖、SCsub、XML、许可证。
-- [ ] 使用目标源码重新编译带测试的 editor 和实际交付的 template；相同版本字符串不代表二进制内容一致。当前预置 editor 曾落后于 release 模板，不能用它替代发布运行时验收。
-- [ ] 按启用功能运行原生测试、关闭可选模块的编译检查，再运行打包应用的无头/图形/DPI 回归。检查窗口开关关闭路径与默认值；必要时补做此前未测的平台/缩放组合。
-- [ ] 用新模板重新导出 EXE/PCK，核查 `build-manifest.json` 和应用源码散列；发布文档说明自定义设置、依赖与剩余限制。
-- [ ] 审核完成后更新 JSON 的 `comparison_base`、盘点日期和 HEAD，将旧基线/测试结果留在升级记录中；不要仅为消除检查报错而把基线改成定制 HEAD。
-
-原生验证命令示例（使用**刚编译、启用了 tests 和相应模块**的 editor；本次仅登记命令，不声称已重跑）：
-
-```powershell
-.\bin\godot.windows.editor.dev.x86_64.console.exe --headless --test '--test-case=*TiledMesh3D*,*OSGDB*,*3DTiles*,*Draco*,*KHR_draco*' --no-version
-```
-
-打包应用验证入口：
-
-```powershell
-.\projects\DigitalViewer\tools\Build-Desktop.ps1 -Preset 'Windows Validation'
-.\projects\DigitalViewer\tools\Test-Desktop.ps1 -Pack -Engine ./projects/DigitalViewer/build/validation/DigitalViewer.console.exe
-.\projects\DigitalViewer\tools\Test-Desktop.ps1 -Pack -Engine ./projects/DigitalViewer/build/validation/DigitalViewer.console.exe -Graphics -Capture
-.\projects\DigitalViewer\tools\Build-Desktop.ps1
-```
-
-上述脚本负责导出与应用验证，**不编译 Godot C++**。需先完成新源码的 editor/template 构建。最近一轮应用证据为 211 项无头检查、362 项图形检查；范围与限制见应用实现状态，不能推广为全部 C++ 模块或全部平台通过。脚本面板关闭、确认复用、结构树交互/布局及透明覆盖层鼠标穿透修复仅涉及 DigitalViewer 应用代码；B3DM 与 OSG 修复分别涉及 GD-3DT-001、GD-OSG-001。
-
-## 5. 升级记录
-
-| 日期 | 起点 → 目标 | 条目处理 | 验证与产物 |
-| --- | --- | --- | --- |
-| 2026-10-27 | 本地 `f6ab5db28b9…` → `9c605b09a54…` + 工作区 | 首次建账；保留 DPI 源码方案；登记既有模块；并未升级引擎 | 路径覆盖检查；功能验证引用已有记录，本次不重建引擎 |
-| 2026-10-28 | 同一 HEAD + 工作区；未升级引擎 | GD-3DT-001：兼容 ContextCapture B3DM 缺少末尾 8 字节填充 | 重建 release 模板；应用正反例、200 项无头及 351 项图形检查通过；武当山原始数据加载失败数降为 0 |
-| 2026-10-28 | 同一 HEAD + 工作区；未升级引擎 | GD-OSG-001：传统 OSG wrapper 注册、中文分词与 Windows ANSI 路径、延迟资源读取 | 重建 release 模板；205 项无头及 356 项图形检查通过；武当山 OSG 导航失败内容 0，源 JPG 缺失仍有警告；新增 wrappers 来源/许可已记录 |
-| 2026-10-28 | 同一 HEAD + 工作区；未升级引擎 | GD-OSG-001：合法空 Group/Geode 瓦片返回空文档，不再误报损坏 | 重建 release 模板；211 项无头及 362 项图形检查通过；桃园原空瓦片和所属入口验证通过；未改第三方库 |
-
-下一次升级在这里追加目标完整 commit、每项保留/替代决定、对应提交和新测试证据。
+| 日期 | 条目 / 范围 | 处理与验证 |
+| --- | --- | --- |
+| 2026-10-27 | 首次建账；原有代码补丁 | 建立本地比较基线，记录 Windows DPI 与原有 glTF 接入；未升级 Godot |
+| 2026-11-06 | GD-DEPTH-BIAS-001 | 补录 24 个引擎文件；重建 dev editor、CAD/ALL release 模板与导出包；三种渲染器 × 开关深度预绘制各 30 项通过，CNC BREP 各 390 项、配置 68/59 项通过；完整桌面套件有旧版可复现失败，D3D12 / Metal 未实机验证 |
+| 2026-11-06 | 清单范围清理 | 移除独立新增模块、第三方库及其内部修复记录；glTF 条目收敛为原有模块的接入修改；清单维护文件改为排除项；保留 3 项、32 个引擎补丁文件 |

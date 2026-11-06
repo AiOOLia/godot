@@ -5194,6 +5194,7 @@ RDD::PipelineID RenderingDeviceDriverD3D12::render_pipeline_create(
 		(&pipeline_desc.RasterizerState)->DepthBias = p_rasterization_state.depth_bias_constant_factor;
 		(&pipeline_desc.RasterizerState)->DepthBiasClamp = p_rasterization_state.depth_bias_clamp;
 		(&pipeline_desc.RasterizerState)->SlopeScaledDepthBias = p_rasterization_state.depth_bias_slope_factor;
+	} else {
 		(&pipeline_desc.RasterizerState)->DepthBias = 0;
 		(&pipeline_desc.RasterizerState)->DepthBiasClamp = 0.0f;
 		(&pipeline_desc.RasterizerState)->SlopeScaledDepthBias = 0.0f;

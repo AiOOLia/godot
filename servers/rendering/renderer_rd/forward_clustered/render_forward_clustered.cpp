@@ -415,6 +415,9 @@ void RenderForwardClustered::_render_list_template(RenderingDevice::DrawListID p
 		}
 
 		pipeline_key.primitive_type = surf->primitive;
+		// Use the original material even when the prepass uses a shared depth shader.
+		// Shadow maps, material baking and SDF generation retain their original depth.
+		pipeline_key.depth_bias = (!shadow_pass && p_pass_mode != PASS_MODE_DEPTH_MATERIAL && p_pass_mode != PASS_MODE_SDF) ? surf->material->depth_bias : RendererMaterialStorage::DepthBias{};
 
 		RID xforms_uniform_set = surf->owner->transforms_uniform_set;
 
@@ -4682,6 +4685,7 @@ void RenderForwardClustered::_mesh_compile_pipelines_for_surface(const SurfacePi
 	SceneShaderForwardClustered::ShaderData::PipelineKey pipeline_key;
 	pipeline_key.cull_mode = RD::POLYGON_CULL_DISABLED;
 	pipeline_key.primitive_type = mesh_storage->mesh_surface_get_primitive(p_surface.mesh_surface);
+	pipeline_key.depth_bias = p_surface.depth_bias;
 	pipeline_key.wireframe = false;
 
 	// Grab the shader and surface used for most passes.
@@ -4767,6 +4771,7 @@ void RenderForwardClustered::_mesh_compile_pipelines_for_surface(const SurfacePi
 	}
 
 	if (p_global.use_sdfgi) {
+		pipeline_key.depth_bias = {};
 		// Depth pass with SDFGI support.
 		pipeline_key.version = SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_WITH_SDF;
 		pipeline_key.framebuffer_format_id = _get_depth_framebuffer_format_for_pipeline(buffers_can_be_storage, RD::TextureSamples(p_global.texture_samples), false, false);
@@ -4778,17 +4783,20 @@ void RenderForwardClustered::_mesh_compile_pipelines_for_surface(const SurfacePi
 	}
 
 	// The dedicated depth passes use a different version of the surface and the shader.
+	pipeline_key.depth_bias = p_surface.depth_bias;
 	pipeline_key.primitive_type = mesh_storage->mesh_surface_get_primitive(p_surface.mesh_surface_shadow);
 	pipeline_key.version = SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS;
 	pipeline_key.framebuffer_format_id = _get_depth_framebuffer_format_for_pipeline(buffers_can_be_storage, RD::TextureSamples(p_global.texture_samples), false, false);
 	_mesh_compile_pipeline_for_surface(p_surface.shader_shadow, p_surface.mesh_surface_shadow, true, p_surface.instanced, p_source, pipeline_key, r_pipeline_pairs);
 
+	pipeline_key.depth_bias = {};
 	if (p_global.use_shadow_dual_paraboloid) {
 		pipeline_key.version = SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS_DP;
 		_mesh_compile_pipeline_for_surface(p_surface.shader_shadow, p_surface.mesh_surface_shadow, true, p_surface.instanced, p_source, pipeline_key, r_pipeline_pairs);
 	}
 
 	if (p_global.use_shadow_cubemaps) {
+		pipeline_key.depth_bias = {};
 		pipeline_key.version = SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS;
 		pipeline_key.framebuffer_format_id = _get_shadow_cubemap_framebuffer_format_for_pipeline();
 		_mesh_compile_pipeline_for_surface(p_surface.shader_shadow, p_surface.mesh_surface_shadow, true, p_surface.instanced, p_source, pipeline_key, r_pipeline_pairs);
@@ -4810,6 +4818,7 @@ void RenderForwardClustered::_mesh_compile_pipelines_for_surface(const SurfacePi
 
 	if (p_global.use_reflection_probes) {
 		// Depth pass for reflection probes. Normally this will be redundant as the format is the exact same as the shadow cubemap.
+		pipeline_key.depth_bias = p_surface.depth_bias;
 		pipeline_key.version = SceneShaderForwardClustered::PIPELINE_VERSION_DEPTH_PASS;
 		pipeline_key.framebuffer_format_id = _get_reflection_probe_depth_framebuffer_format_for_pipeline();
 		_mesh_compile_pipeline_for_surface(p_surface.shader_shadow, p_surface.mesh_surface_shadow, true, p_surface.instanced, p_source, pipeline_key, r_pipeline_pairs);
@@ -4821,6 +4830,7 @@ void RenderForwardClustered::_mesh_generate_all_pipelines_for_surface_cache(Geom
 	float multiplied_fade_alpha = p_surface_cache->owner->force_alpha * p_surface_cache->owner->parent_fade_alpha;
 	bool uses_fade = (multiplied_fade_alpha < FADE_ALPHA_PASS_THRESHOLD) || p_surface_cache->owner->fade_near || p_surface_cache->owner->fade_far;
 	SurfacePipelineData surface;
+	surface.depth_bias = p_surface_cache->material->depth_bias;
 	surface.mesh_surface = p_surface_cache->surface;
 	surface.mesh_surface_shadow = p_surface_cache->surface_shadow;
 	surface.shader = p_surface_cache->shader;
@@ -5015,6 +5025,7 @@ void RenderForwardClustered::mesh_generate_pipelines(RID p_mesh, bool p_backgrou
 		}
 
 		SurfacePipelineData surface;
+		surface.depth_bias = material->depth_bias;
 		surface.mesh_surface = mesh_surface;
 		surface.mesh_surface_shadow = mesh_surface_shadow;
 		surface.shader = shader;

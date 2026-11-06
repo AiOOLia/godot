@@ -395,6 +395,7 @@ void RenderForwardMobile::mesh_generate_pipelines(RID p_mesh, bool p_background_
 		}
 
 		SurfacePipelineData surface;
+		surface.depth_bias = material->depth_bias;
 		surface.mesh_surface = mesh_surface;
 		surface.mesh_surface_shadow = mesh_surface_shadow;
 		surface.shader = shader;
@@ -2525,6 +2526,7 @@ void RenderForwardMobile::_render_list_template(RenderingDevice::DrawListID p_dr
 		}
 
 		pipeline_key.primitive_type = surf->primitive;
+		pipeline_key.depth_bias = (!shadow_pass && p_pass_mode != PASS_MODE_DEPTH_MATERIAL) ? surf->material->depth_bias : RendererMaterialStorage::DepthBias{};
 		RID xforms_uniform_set = surf->owner->transforms_uniform_set;
 
 		switch (p_params->pass_mode) {
@@ -3355,6 +3357,7 @@ void RenderForwardMobile::_mesh_compile_pipelines_for_surface(const SurfacePipel
 	SceneShaderForwardMobile::ShaderData::PipelineKey pipeline_key;
 	pipeline_key.cull_mode = RD::POLYGON_CULL_DISABLED;
 	pipeline_key.primitive_type = mesh_storage->mesh_surface_get_primitive(p_surface.mesh_surface);
+	pipeline_key.depth_bias = p_surface.depth_bias;
 	pipeline_key.wireframe = false;
 
 	const bool multiview_enabled = p_global.use_multiview && scene_shader.is_multiview_shader_group_enabled();
@@ -3408,12 +3411,14 @@ void RenderForwardMobile::_mesh_compile_pipelines_for_surface(const SurfacePipel
 	}
 
 	if (p_global.use_shadow_cubemaps) {
+		pipeline_key.depth_bias = {};
 		pipeline_key.version = SceneShaderForwardMobile::SHADER_VERSION_SHADOW_PASS;
 		pipeline_key.framebuffer_format_id = _get_shadow_cubemap_framebuffer_format_for_pipeline();
 		_mesh_compile_pipeline_for_surface(p_surface.shader_shadow, p_surface.mesh_surface_shadow, p_surface.instanced, p_source, pipeline_key, r_pipeline_pairs);
 	}
 
 	const uint32_t use_16_bits_start = p_global.use_32_bit_shadows ? 0 : 1;
+	pipeline_key.depth_bias = {};
 	const uint32_t use_16_bits_iterations = p_global.use_16_bit_shadows ? 2 : 1;
 	for (uint32_t use_16_bits = use_16_bits_start; use_16_bits < use_16_bits_iterations; use_16_bits++) {
 		pipeline_key.version = SceneShaderForwardMobile::SHADER_VERSION_SHADOW_PASS;
@@ -3435,6 +3440,7 @@ void RenderForwardMobile::_mesh_compile_pipelines_for_surface(const SurfacePipel
 void RenderForwardMobile::_mesh_generate_all_pipelines_for_surface_cache(GeometryInstanceSurfaceDataCache *p_surface_cache, const GlobalPipelineData &p_global) {
 	bool uses_alpha_pass = (p_surface_cache->flags & GeometryInstanceSurfaceDataCache::FLAG_PASS_ALPHA) != 0;
 	SurfacePipelineData surface;
+	surface.depth_bias = p_surface_cache->material->depth_bias;
 	surface.mesh_surface = p_surface_cache->surface;
 	surface.mesh_surface_shadow = p_surface_cache->surface_shadow;
 	surface.shader = p_surface_cache->shader;

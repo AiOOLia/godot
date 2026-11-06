@@ -620,6 +620,7 @@ private:
 	PagedAllocator<GeometryInstanceLightmapSH> geometry_instance_lightmap_sh;
 
 	struct SurfacePipelineData {
+		RendererMaterialStorage::DepthBias depth_bias;
 		void *mesh_surface = nullptr;
 		void *mesh_surface_shadow = nullptr;
 		SceneShaderForwardClustered::ShaderData *shader = nullptr;

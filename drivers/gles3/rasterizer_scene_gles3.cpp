@@ -3295,6 +3295,12 @@ void RasterizerSceneGLES3::_render_list_template(RenderListParameters *p_params,
 			continue;
 		}
 
+		if constexpr (p_pass_mode != PASS_MODE_SHADOW) {
+			scene_state.set_gl_depth_bias(surf->material->depth_bias);
+		} else {
+			scene_state.set_gl_depth_bias({});
+		}
+
 		//request a redraw if one of the shaders uses TIME
 		if (shader->uses_time) {
 			should_request_redraw = true;
@@ -4021,6 +4027,9 @@ void RasterizerSceneGLES3::_render_list_template(RenderListParameters *p_params,
 			}
 		}
 	}
+
+	// Do not leak polygon offset into sky, canvas, blits, or subsequent render lists.
+	scene_state.set_gl_depth_bias({});
 
 	// Make the actual redraw request
 	if (should_request_redraw) {

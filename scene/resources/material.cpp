@@ -86,11 +86,71 @@ RID Material::get_rid() const {
 	return material;
 }
 
+void Material::_update_depth_bias() const {
+	if (material.is_valid()) {
+		RS::get_singleton()->material_set_depth_bias(material, depth_bias_enabled, depth_bias_constant_factor, depth_bias_slope_factor);
+	}
+}
+
+void Material::_set_material(RID p_material) const {
+	material = p_material;
+	if (depth_bias_enabled || depth_bias_constant_factor != 0.0f || depth_bias_slope_factor != 0.0f) {
+		_update_depth_bias();
+	}
+}
+
+void Material::set_depth_bias_enabled(bool p_enabled) {
+	if (depth_bias_enabled == p_enabled) {
+		return;
+	}
+	depth_bias_enabled = p_enabled;
+	_update_depth_bias();
+	notify_property_list_changed();
+	emit_changed();
+}
+
+bool Material::is_depth_bias_enabled() const {
+	return depth_bias_enabled;
+}
+
+void Material::set_depth_bias_constant_factor(float p_factor) {
+	ERR_FAIL_COND(!Math::is_finite(p_factor));
+	if (depth_bias_constant_factor == p_factor) {
+		return;
+	}
+	depth_bias_constant_factor = p_factor;
+	_update_depth_bias();
+	emit_changed();
+}
+
+float Material::get_depth_bias_constant_factor() const {
+	return depth_bias_constant_factor;
+}
+
+void Material::set_depth_bias_slope_factor(float p_factor) {
+	ERR_FAIL_COND(!Math::is_finite(p_factor));
+	if (depth_bias_slope_factor == p_factor) {
+		return;
+	}
+	depth_bias_slope_factor = p_factor;
+	_update_depth_bias();
+	emit_changed();
+}
+
+float Material::get_depth_bias_slope_factor() const {
+	return depth_bias_slope_factor;
+}
+
 void Material::_validate_property(PropertyInfo &p_property) const {
 	if (!_can_do_next_pass() && p_property.name == "next_pass") {
 		p_property.usage = PROPERTY_USAGE_NONE;
 	} else if (!_can_use_render_priority() && p_property.name == "render_priority") {
 		p_property.usage = PROPERTY_USAGE_NONE;
+	}
+	if (p_property.name.begins_with("depth_bias_")) {
+		if (get_shader_mode() != Shader::MODE_SPATIAL || (!depth_bias_enabled && p_property.name != "depth_bias_enabled")) {
+			p_property.usage &= ~PROPERTY_USAGE_EDITOR;
+		}
 	}
 }
 
@@ -163,6 +223,12 @@ void Material::_bind_methods() {
 
 	ClassDB::bind_method(D_METHOD("set_render_priority", "priority"), &Material::set_render_priority);
 	ClassDB::bind_method(D_METHOD("get_render_priority"), &Material::get_render_priority);
+	ClassDB::bind_method(D_METHOD("set_depth_bias_enabled", "enabled"), &Material::set_depth_bias_enabled);
+	ClassDB::bind_method(D_METHOD("is_depth_bias_enabled"), &Material::is_depth_bias_enabled);
+	ClassDB::bind_method(D_METHOD("set_depth_bias_constant_factor", "factor"), &Material::set_depth_bias_constant_factor);
+	ClassDB::bind_method(D_METHOD("get_depth_bias_constant_factor"), &Material::get_depth_bias_constant_factor);
+	ClassDB::bind_method(D_METHOD("set_depth_bias_slope_factor", "factor"), &Material::set_depth_bias_slope_factor);
+	ClassDB::bind_method(D_METHOD("get_depth_bias_slope_factor"), &Material::get_depth_bias_slope_factor);
 
 	ClassDB::bind_method(D_METHOD("inspect_native_shader_code"), &Material::inspect_native_shader_code);
 	ClassDB::set_method_flags(get_class_static(), StringName("inspect_native_shader_code"), METHOD_FLAGS_DEFAULT | METHOD_FLAG_EDITOR);
@@ -171,6 +237,10 @@ void Material::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "render_priority", PROPERTY_HINT_RANGE, itos(RENDER_PRIORITY_MIN) + "," + itos(RENDER_PRIORITY_MAX) + ",1"), "set_render_priority", "get_render_priority");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "next_pass", PROPERTY_HINT_RESOURCE_TYPE, Material::get_class_static()), "set_next_pass", "get_next_pass");
+	ADD_GROUP("Depth Bias", "depth_bias_");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "depth_bias_enabled"), "set_depth_bias_enabled", "is_depth_bias_enabled");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "depth_bias_constant_factor", PROPERTY_HINT_RANGE, "-16,16,0.01,or_less,or_greater"), "set_depth_bias_constant_factor", "get_depth_bias_constant_factor");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "depth_bias_slope_factor", PROPERTY_HINT_RANGE, "-16,16,0.01,or_less,or_greater"), "set_depth_bias_slope_factor", "get_depth_bias_slope_factor");
 
 	BIND_CONSTANT(RENDER_PRIORITY_MAX);
 	BIND_CONSTANT(RENDER_PRIORITY_MIN);

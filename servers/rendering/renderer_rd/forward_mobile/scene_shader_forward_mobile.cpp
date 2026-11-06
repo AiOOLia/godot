@@ -382,6 +382,12 @@ void SceneShaderForwardMobile::ShaderData::_create_pipeline(PipelineKey p_pipeli
 	RD::PipelineRasterizationState raster_state;
 	raster_state.cull_mode = p_pipeline_key.cull_mode;
 	raster_state.wireframe = wireframe || p_pipeline_key.wireframe;
+	if (!raster_state.wireframe && p_pipeline_key.primitive_type >= RSE::PRIMITIVE_TRIANGLES) {
+		raster_state.depth_bias_enabled = p_pipeline_key.depth_bias.enabled;
+		// Reverse Z: positive material factors move filled triangles away from the camera.
+		raster_state.depth_bias_constant_factor = -p_pipeline_key.depth_bias.constant_factor;
+		raster_state.depth_bias_slope_factor = -p_pipeline_key.depth_bias.slope_factor;
+	}
 
 	RD::PipelineMultisampleState multisample_state;
 	multisample_state.sample_count = RD::get_singleton()->framebuffer_format_get_texture_samples(p_pipeline_key.framebuffer_format_id, 0);

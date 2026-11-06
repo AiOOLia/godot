@@ -43,6 +43,10 @@ class Material : public Resource {
 	mutable RID material;
 	Ref<Material> next_pass;
 	int render_priority;
+	bool depth_bias_enabled = false;
+	float depth_bias_constant_factor = 0.0f;
+	float depth_bias_slope_factor = 0.0f;
+	void _update_depth_bias() const;
 
 	enum {
 		INIT_STATE_UNINITIALIZED,
@@ -53,7 +57,7 @@ class Material : public Resource {
 	void inspect_native_shader_code();
 
 protected:
-	_FORCE_INLINE_ void _set_material(RID p_material) const { material = p_material; }
+	void _set_material(RID p_material) const;
 	_FORCE_INLINE_ RID _get_material() const { return material; }
 	static void _bind_methods();
 	virtual bool _can_do_next_pass() const;
@@ -81,6 +85,13 @@ public:
 
 	void set_render_priority(int p_priority);
 	int get_render_priority() const;
+
+	void set_depth_bias_enabled(bool p_enabled);
+	bool is_depth_bias_enabled() const;
+	void set_depth_bias_constant_factor(float p_factor);
+	float get_depth_bias_constant_factor() const;
+	void set_depth_bias_slope_factor(float p_factor);
+	float get_depth_bias_slope_factor() const;
 
 	virtual RID get_rid() const override;
 	virtual RID get_shader_rid() const;
