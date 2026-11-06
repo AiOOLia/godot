@@ -1,6 +1,7 @@
 extends Control
 signal action(id: String, command: String)
 const Ui = preload("res://scripts/desktop/ui_widgets.gd")
+const Profile = preload("res://scripts/desktop/build_profile.gd")
 var view_id := ""
 var display: TextureRect
 var backdrop: TextureRect
@@ -24,6 +25,7 @@ var _pan := false
 var _refreshing := false
 var _restoring_selection := false
 var _items: Dictionary = {}
+var _layer_root_keys: Dictionary = {}
 var _selected_keys: Array[String] = []
 var _suppress_selection_sync := false
 var _pixel_scale := Vector2.ONE
@@ -102,7 +104,7 @@ func _ready() -> void:
 	badge.add_theme_stylebox_override("panel", Ui.box(Ui.RAISED, Color.TRANSPARENT, 12, 0, Vector4(0, 0, 0, 0)))
 	badge_center.add_child(badge)
 	var globe := TextureRect.new()
-	globe.texture = Ui.icon("globe")
+	globe.texture = Ui.icon("globe" if Profile.enabled("gis") else "layers")
 	globe.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	globe.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	globe.custom_minimum_size = Vector2(21, 21)
@@ -117,7 +119,7 @@ func _ready() -> void:
 	empty_title.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_empty.add_child(empty_title)
 	var empty_body := Label.new()
-	empty_body.text = tr("Add a WGS84 ellipsoid as the base globe, or add imagery, terrain, and 3D data.")
+	empty_body.text = tr("Add a WGS84 ellipsoid as the base globe, or add imagery, terrain, and 3D data.") if Profile.enabled("gis") else tr("Add a glTF/GLB model, ZIP archive, or GDScript script.")
 	empty_body.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	empty_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	empty_body.custom_minimum_size = Vector2(340, 0)
@@ -137,8 +139,8 @@ func _ready() -> void:
 	_empty_button.add_theme_font_size_override("font_size", 12)
 	_empty_button.add_theme_constant_override("h_separation", 5)
 	_empty_button.add_theme_stylebox_override("normal", Ui.box(Ui.ACCENT, Color.TRANSPARENT, 7, 0, Vector4(10, 5, 12, 5)))
-	_empty_button.add_theme_stylebox_override("hover", Ui.box(Color("#36cbab"), Color.TRANSPARENT, 7, 0, Vector4(10, 5, 12, 5)))
-	_empty_button.add_theme_stylebox_override("pressed", Ui.box(Color("#22957d"), Color.TRANSPARENT, 7, 0, Vector4(10, 5, 12, 5)))
+	_empty_button.add_theme_stylebox_override("hover", Ui.box(Ui.ACCENT_HOVER, Color.TRANSPARENT, 7, 0, Vector4(10, 5, 12, 5)))
+	_empty_button.add_theme_stylebox_override("pressed", Ui.box(Ui.ACCENT_PRESSED, Color.TRANSPARENT, 7, 0, Vector4(10, 5, 12, 5)))
 	_empty_button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	_empty_button.add_theme_color_override("font_color", Ui.ON_ACCENT)
 	_empty_button.add_theme_color_override("font_hover_color", Ui.ON_ACCENT)
@@ -273,7 +275,7 @@ func _schedule_refresh() -> void:
 
 func refresh() -> void:
 	_refreshing = false
-	if not is_inside_tree() or not AppState.views.has(view_id): return
+	if AppState.shutting_down or not is_inside_tree() or not AppState.views.has(view_id): return
 	var view: Node = AppState.views[view_id]
 	_title.text = view_id.replace("view_", tr("View "))
 	var collapsed := {}
@@ -281,7 +283,9 @@ func refresh() -> void:
 	var selected_keys := _selected_keys.duplicate()
 	if selected_keys.is_empty() and tree.get_selected():
 		selected_keys.append(tree.get_selected().get_meta("key", ""))
+	_restoring_selection = true
 	_items.clear()
+	_layer_root_keys.clear()
 	tree.clear()
 	var root := tree.create_item()
 	var camera := _item(root, "camera")
@@ -298,12 +302,24 @@ func refresh() -> void:
 			groups[group].set_metadata(0, "group:" + group)
 			groups[group].set_cell_mode(1, TreeItem.CELL_MODE_CHECK)
 			groups[group].set_editable(1, true)
+		if layer.kind == "brep" and is_instance_valid(layer.node) and layer.node.get_child_count() > 0:
+			# The layer and import container own runtime state, not source hierarchy.
+			var budget := [2048]
+			var keys: Array[String] = []
+			for source_root in layer.node.get_children():
+				var source_item := _script_node(source_root, groups[group], layer.id, 0, budget, 128)
+				if source_item == null: break
+				_layer_visibility(source_item, layer)
+				source_item.set_tooltip_text(0, layer.name + ("\n" + layer.error if not layer.error.is_empty() else ""))
+				keys.append(source_item.get_meta("key"))
+			_layer_root_keys[layer.id] = keys
+			if budget[0] <= 0:
+				var limit := tree.create_item(groups[group])
+				limit.set_text(0, "… (assembly tree preview limit: 2048 nodes)")
+			continue
 		var item := _item(groups[group], "layer:" + layer.id)
 		# Keep the name cell read-only; only the separate checkbox changes visibility.
-		item.set_cell_mode(1, TreeItem.CELL_MODE_CHECK)
-		item.set_editable(1, true)
-		item.set_checked(1, layer.visible)
-		item.set_tooltip_text(1, tr("Visible"))
+		_layer_visibility(item, layer)
 		item.set_text(0, tr(layer.name))
 		item.set_tooltip_text(0, layer.error)
 		item.set_metadata(0, layer.id)
@@ -327,10 +343,17 @@ func refresh() -> void:
 		_sync_selection()
 	else:
 		_restore_selected_keys(selected_keys)
+		if _selected_keys.is_empty(): _sync_selection()
 	_empty.visible = view.layers.is_empty()
 	tree.visible = not view.layers.is_empty()
 	_layout()
 	queue_redraw()
+
+func _layer_visibility(item: TreeItem, layer: Dictionary) -> void:
+	item.set_cell_mode(1, TreeItem.CELL_MODE_CHECK)
+	item.set_editable(1, true)
+	item.set_checked(1, layer.visible)
+	item.set_tooltip_text(1, tr("Visible"))
 
 func _item(parent: TreeItem, key: String) -> TreeItem:
 	var item := tree.create_item(parent)
@@ -343,20 +366,30 @@ func _sync_selection(group_key := "") -> void:
 	if _suppress_selection_sync: return
 	if not is_instance_valid(tree) or not AppState.views.has(view_id): return
 	var view: Node = AppState.views[view_id]
-	var key: String = group_key
-	if key.is_empty():
+	var keys: Array[String] = []
+	if not group_key.is_empty(): keys.append(group_key)
+	else:
 		match view.selection_kind:
-			"camera": key = "camera"
-			"layer": key = "layer:" + view.selected
+			"camera": keys.append("camera")
+			"layer": keys.assign(_layer_root_keys.get(view.selected, ["layer:" + view.selected]))
 			"node":
 				var node: Node = view.selected_node.get_ref() if view.selected_node else null
-				key = "node:%s:%d" % [view.selected, node.get_instance_id()] if is_instance_valid(node) else "layer:" + view.selected
+				if is_instance_valid(node): keys.append("node:%s:%d" % [view.selected, node.get_instance_id()])
+				else: keys.assign(_layer_root_keys.get(view.selected, ["layer:" + view.selected]))
+	var reveal: bool = AppState.active_id == view_id and (not view.selected_face.is_empty() or _selected_keys != keys)
 	_restoring_selection = true
 	tree.deselect_all()
 	_selected_keys.clear()
-	if _items.has(key):
-		_items[key].select(0)
+	for key in keys:
+		if not _items.has(key): continue
+		if reveal:
+			var ancestor: TreeItem = _items[key].get_parent()
+			while ancestor != null:
+				ancestor.collapsed = false
+				ancestor = ancestor.get_parent()
+		_items[key].select(0, _selected_keys.is_empty())
 		_selected_keys.append(key)
+	if reveal and not _selected_keys.is_empty(): tree.scroll_to_item(_items[_selected_keys[0]])
 	_restoring_selection = false
 
 func _restore_selected_keys(keys: Array[String]) -> void:
@@ -365,18 +398,19 @@ func _restore_selected_keys(keys: Array[String]) -> void:
 	_selected_keys.clear()
 	for key in keys:
 		if _items.has(key):
-			_items[key].select(0, false)
+			_items[key].select(0, _selected_keys.is_empty())
 			_selected_keys.append(key)
 	_restoring_selection = false
 
-func _script_node(node: Node, parent: TreeItem, layer_id: String, depth: int, budget: Array) -> void:
-	if depth > 12 or budget[0] <= 0: return
+func _script_node(node: Node, parent: TreeItem, layer_id: String, depth: int, budget: Array, max_depth := 12) -> TreeItem:
+	if depth > max_depth or budget[0] <= 0: return null
 	budget[0] -= 1
 	var item := _item(parent, "node:%s:%d" % [layer_id, node.get_instance_id()])
 	item.set_text(0, str(node.name))
 	item.set_metadata(0, layer_id)
 	item.set_meta("node", weakref(node))
-	for child in node.get_children(): _script_node(child, item, layer_id, depth + 1, budget)
+	for child in node.get_children(): _script_node(child, item, layer_id, depth + 1, budget, max_depth)
+	return item
 
 func _sync_backdrop() -> void:
 	if not AppState.views.has(view_id) or not is_instance_valid(backdrop): return
@@ -425,7 +459,7 @@ func _process(delta: float) -> void:
 func _draw() -> void:
 	draw_rect(Rect2(0, 0, size.x, 28), Ui.SURFACE)
 	draw_line(Vector2(0, 27.5), Vector2(size.x, 27.5), Ui.LINE, 1.0)
-	draw_rect(Rect2(Vector2.ZERO, size), Ui.LINE if AppState.active_id != view_id else Color("#2b4a48"), false, 1.0)
+	draw_rect(Rect2(Vector2.ZERO, size), Ui.LINE if AppState.active_id != view_id else Ui.LINE_STRONG, false, 1.0)
 
 func _title_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.pressed:
@@ -450,6 +484,23 @@ func _multi_selected(item: TreeItem, _column: int, selected: bool) -> void:
 		_suppress_selection_sync = false
 	else:
 		_selected_keys.erase(key)
+		_suppress_selection_sync = true
+		if _selected_keys.is_empty(): AppState.activate(view_id)
+		elif _items.has(_selected_keys.back()): _activate_tree_item(_items[_selected_keys.back()])
+		_suppress_selection_sync = false
+	_highlight_selected_items()
+
+func _highlight_selected_items() -> void:
+	var targets: Array[Node] = []
+	for key in _selected_keys:
+		if not _items.has(key): continue
+		var item: TreeItem = _items[key]
+		var node: Node = item.get_meta("node").get_ref() if item.has_meta("node") else null
+		if is_instance_valid(node): targets.append(node)
+		elif key.begins_with("layer:"):
+			var layer: Dictionary = AppState.views[view_id].get_layer(str(item.get_metadata(0)))
+			if layer.get("kind") == "brep" and is_instance_valid(layer.node): targets.append(layer.node)
+	AppState.views[view_id].highlight_selection(targets)
 
 func _activate_tree_item(item: TreeItem) -> void:
 	var key := str(item.get_meta("key", ""))
@@ -488,8 +539,8 @@ func _input_view(event: InputEvent) -> void:
 		if event.button_index in [MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE]:
 			if not event.pressed and _drag and not _moved and event.button_index == MOUSE_BUTTON_LEFT:
 				var hit: Dictionary = view.pick(event.position * Vector2(view.viewport.size) / display.size)
+				AppState.select_hit(view_id, hit)
 				if not hit.is_empty():
-					AppState.activate(view_id, "layer", hit.layer)
 					AppState.status_changed.emit(AppState.redact(str(hit)))
 			_drag = event.pressed
 			_pan = event.button_index != MOUSE_BUTTON_LEFT or event.shift_pressed

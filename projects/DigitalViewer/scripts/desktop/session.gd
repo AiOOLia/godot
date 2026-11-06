@@ -7,7 +7,7 @@ signal ownership_changed
 
 const ViewScene = preload("res://scripts/desktop/view_scene.gd")
 const DataStore = preload("res://scripts/desktop/data_store.gd")
-const Geo = preload("res://scripts/desktop/geo.gd")
+const Profile = preload("res://scripts/desktop/build_profile.gd")
 var views: Dictionary = {}
 var active_id := ""
 var store: Node
@@ -45,14 +45,28 @@ func create_view() -> String:
 	changed.emit()
 	return id
 
-func activate(id: String, kind := "viewport", layer_id := "", node: Node = null, viewport_properties := false) -> void:
+func activate(id: String, kind := "viewport", layer_id := "", node: Node = null, viewport_properties := false, face: Dictionary = {}) -> void:
 	if not views.has(id): return
 	active_id = id
 	views[id].selection_kind = kind
 	views[id].show_viewport_properties = viewport_properties if kind == "viewport" else false
 	if kind in ["layer", "node"]: views[id].selected = layer_id
 	views[id].selected_node = weakref(node) if is_instance_valid(node) else null
+	var targets: Array[Node] = []
+	if kind == "node" and is_instance_valid(node): targets.append(node)
+	elif kind == "layer":
+		var layer: Dictionary = views[id].get_layer(layer_id)
+		if layer.get("kind") == "brep" and is_instance_valid(layer.node): targets.append(layer.node)
+	views[id].highlight_selection(targets, face)
 	selection_changed.emit()
+
+func select_hit(id: String, hit: Dictionary) -> void:
+	if hit.is_empty():
+		activate(id)
+		return
+	var node: Node = hit.node.get_ref() if hit.get("node") is WeakRef else null
+	activate(id, "node" if is_instance_valid(node) else "layer", hit.layer, node, false, hit.get("brep", {}))
+	if not hit.has("brep") and hit.has("position"): views[id]._show_pick_marker(hit.position)
 
 func close_view(id: String) -> bool:
 	if not views.has(id) or views.size() <= 1: return false
@@ -178,8 +192,11 @@ func describe() -> Dictionary:
 		var list: Array = []
 		for layer in view.layers:
 			list.append({"id": layer.id, "name": redact(layer.name), "kind": layer.kind, "status": layer.status, "visible": layer.visible, "opacity": layer.opacity, "references": store.reference_count(layer.data_id)})
+			if layer.kind == "brep" and store.records.has(layer.data_id):
+				list.back()["brep"] = store.records[layer.data_id].get("brep_stats", {}).duplicate()
+				list.back()["warnings"] = store.records[layer.data_id].get("brep_warnings", []).duplicate()
 		result.append({"id": id, "layers": list, "camera": {"position": [view.camera.position.x, view.camera.position.y, view.camera.position.z], "fov": view.camera.fov}})
-	return {"version": "1.0.0", "active_viewport": active_id, "viewports": result}
+	return {"version": "1.0.0", "profile": Profile.id(), "features": Profile.features(), "active_viewport": active_id, "viewports": result}
 
 func audit_event(tool: String, outcome: String, script_id := "") -> void:
 	var executor: Node = scripts.documents[script_id].runner if scripts.documents.has(script_id) else runner

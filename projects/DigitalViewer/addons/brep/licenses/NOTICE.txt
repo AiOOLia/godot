@@ -1,0 +1,17 @@
+DigitalViewer BREP preview runtime
+
+BRepCore.dll and BRepToTopoDS.dll are existing NDS SDK binaries supplied by
+the NDSBrepExpoter project, copied without modification. The source revision
+and binary hashes are recorded in sdk-manifest.json. No additional
+redistribution rights for these components are granted here.
+
+OCCT_Lite.dll and OCCT_Tools.dll are supplied Open CASCADE based libraries.
+Copyright (c) OPEN CASCADE SAS and contributors.
+The SDK headers declare LGPL 2.1 with the OCCT special exception.
+See LICENSE_LGPL_21.txt and OCCT_LGPL_EXCEPTION.txt in this directory.
+Upstream source: https://github.com/Open-Cascade-SAS/OCCT
+Local SDK source: NDSBrepExpoter/ThirdPart/OCCT.
+
+godot-cpp is MIT licensed; see GODOT-CPP-LICENSE.md in bin/.
+Microsoft Visual C++ release CRT files come from the installed Visual Studio
+redistributable directory and remain subject to Microsoft's license.

@@ -1,0 +1,17 @@
+{
+  "id": "CAD",
+  "product_name": "DigitalViewer CAD",
+  "description": "3D model viewer and scripting workbench",
+  "icon": "res://assets/icon_cad.svg",
+  "theme": "res://themes/cad_theme.tres",
+  "theme_name": "CAD · Blueprint",
+  "template_suffix": "dv_cad",
+  "features": { "osg": false, "3dtiles": false, "gis": false, "brep": true },
+  "palette": {
+    "BG": "#101522", "SURFACE": "#171e2e", "RAISED": "#202a3d",
+    "HOVER": "#2b3850", "ACTIVE": "#334563", "LINE": "#303d55",
+    "LINE_STRONG": "#455a7a", "TEXT": "#edf2fc", "TEXT_2": "#b4c2dc",
+    "TEXT_3": "#8093b3", "ACCENT": "#70a7ff", "ON_ACCENT": "#101b30",
+    "ACCENT_HOVER": "#92bdff", "ACCENT_PRESSED": "#558ce3", "ACTIVE_BG": "#283e63"
+  }
+}

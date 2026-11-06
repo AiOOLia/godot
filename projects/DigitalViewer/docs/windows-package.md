@@ -4,11 +4,13 @@
 
 当前是开发预览，完整 v1.0 尚未完成。已实现范围、验证证据和未完成项目见同目录的 [IMPLEMENTATION-STATUS.md](IMPLEMENTATION-STATUS.md)。无需安装 Godot 编辑器；本包未签名。
 
+本包配置见同目录的 `build-profile.json` 和 `build-manifest.json`：ALL 使用青绿主题和地球图标，提供现有 OSG/OSGB、3D Tiles/Cesium ion 与 GIS 能力；CAD 使用蓝灰主题和工程立方体图标，禁用上述能力，保留 glTF/GLB、ZIP、分屏、拾取、脚本及自动化。下文的 OSG、瓦片、椭球和地理相关说明仅适用于 ALL。CAD 不包含 STEP、IGES、DWG 等额外导入器。
+
 ## 开始使用
 
 1. 启动后是空视口。点击左上角“＋”，选择文件、目录、ZIP、远程地址或 WGS84 椭球。
 2. 视口右上角“⋯”提供左右/上下分屏、独立窗口、全屏、显示模式和关闭。
-3. 在图层树中选择对象，右侧编辑属性。将 glTF/GLB 或椭球图层拖到另一视口可创建共享引用；原生流送瓦片的共享尚未实现。
+3. 单击 BREP 模型高亮对应面，属性面板顶部同时查看“原始 BREP JSON”和“OCC 重构后 BREP JSON”，分别点击“复制 JSON”获取全文。两份数据直接由 brepexpoter 的 DLL 导出，保留源坐标、单位和双精度；修复拆分时原始 JSON 显示完整源面，OCC JSON 显示当前选中的结果面。源面无法唯一关联时提示并导出全部候选原始面。在结构树中选择形体、零件、装配或图层，高亮对应部分，Ctrl 可多选；单击视口空白清除高亮。在图层树中选择对象，右侧编辑属性。将 glTF/GLB 或椭球图层拖到另一视口可创建共享引用；原生流送瓦片的共享尚未实现。
 4. 鼠标拖动旋转，右键/中键或 Shift 拖动平移，滚轮缩放。飞行模式下使用 WASD、Q/E 和 Shift。
 5. “添加数据 → GDScript 脚本”支持选择 `.gd`，或留空新建脚本图层。工作台顶部可切换脚本，每份草稿、日志与运行快照独立保留。首次运行或代码修改后须审查并勾选信任；本次应用会话中，同一文档已确认且代码未改时直接重跑。可同时运行多个脚本，并独立停止、重跑或移除。结构树显示脚本及生成节点；点击名称选中，复选框切换显隐，箭头展开/折叠，类型和状态在属性面板查看。树高度跟随视口，刷新保留折叠和滚动位置。切换视口、停靠、关闭脚本面板或浮窗都不中断执行。需要结束运行时使用“停止”、移除脚本或重置场景。
 
@@ -18,12 +20,13 @@
 
 ## 数据与会话
 
+- CAD/ALL 均可打开本地 NDS `.brep`、独立 BREP 几何 `.json` 或装配 `.json`，也支持 ZIP。若有与 BREP 同名的 `.geom`，请保留在同目录；程序优先直接显示导出的离散几何，缺失或无效时回退 OCC。装配 JSON、BREP 和 GEOM 可一起放入 ZIP。属性面板复制出的原始/OCC 面 JSON 可保存为 `.json` 后直接加载。装配 JSON 与相对引用的二进制 BREP 或几何 JSON 需保留目录关系。JSON 自动区分 BREP 几何、装配与 3D Tiles，几何/装配 JSON 最大 16 MiB。添加数据中的 Up 轴只有 `Y-UP`、`Z-UP` 两项，默认 `Y-UP`（BREP 无附加旋转），适用于文件与 ZIP；Z-Up 的 OSG 数据请选择 `Z-UP`。完整解压 EXE 旁的 DLL，缺失依赖会导致启动检查失败。支持装配树、共享零件、多视口及拓扑修复后的多形体实例；读取 1.3 单位元数据，旧文件无单位时显示未知，默认保留源坐标。远程 BREP、无离散数据的纯线体和 OCCT 文本 BREP 尚不支持。
 - 本地 glTF 应保留相邻的 buffer/纹理文件。ZIP 中存在多个入口时需明确选择。
 - 传统 `.osg` 文本与 `.osgb` 均可加载静态网格/LOD；保留引用的子瓦片及外部图片。文本导出缺少图片时对应层级会无贴图，建议使用原始、包含内嵌纹理的 `.osgb` 入口。
 - 远程 glTF/GLB 可下载外部 buffer/图片，支持相对地址、重定向和有限重试。自定义 HTTP 请求头仅向模型地址的同源服务器发送。
 - 单个内容限制 64 MiB；远程模型及依赖合计 256 MiB、最多 256 个外部依赖。ZIP 合计解压限制 256 MiB、4096 项。
 - 图层、数据源地址/访问令牌、布局和视点仅在当前会话有效。关闭应用不保存工作空间；最后引用删除后清理下载/解压缓存。MCP Bearer 令牌单独持久保存于 `%APPDATA%/Godot/app_userdata/DigitalViewer/mcp/bearer_token`。
-- 用户主动保存的脚本位于 `%APPDATA%/Godot/app_userdata/DigitalViewer/scripts`，不会自动运行。
+- 用户主动保存的脚本位于 `%APPDATA%/Godot/app_userdata/DigitalViewer/scripts`，不会自动运行。CAD 的用户目录为 `%APPDATA%/Godot/app_userdata/DigitalViewer CAD/`，令牌和脚本与 ALL 分开保存。
 - 椭球当前采用归一化显示，尚未与 ECEF 3D Tiles 共用地理参考；影像、DEM、GeoTIFF、动态地球流送仍未实现。
 
 ## 快捷键
@@ -34,3 +37,5 @@
 - 脚本面板 Ctrl+Enter：运行；Ctrl+S：保存；Ctrl+F：查找。
 
 错误在图层属性和底部“诊断”查看，可复制或导出脱敏报告。Godot 与第三方许可证随包提供，制品散列见 `build-manifest.json`。
+
+升级时请将完整 ZIP 解压到新的空目录。旧版本的 `addons/brep/bin/` 可能优先于 EXE 同目录的新 DLL 被加载；混用会造成 ABI 不一致。新版启动检查会拒绝这种目录布局，构建脚本会将旧 `addons/brep/` 备份至 `build/retired-brep/`。

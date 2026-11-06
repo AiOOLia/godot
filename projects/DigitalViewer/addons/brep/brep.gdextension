@@ -1,0 +1,10 @@
+[configuration]
+entry_symbol = "digital_viewer_brep_init"
+compatibility_minimum = "4.1"
+reloadable = false
+
+[libraries]
+windows.x86_64 = "res://addons/brep/bin/DigitalViewerBRep.dll"
+
+[dependencies]
+windows.x86_64 = { "res://addons/brep/bin/BRepCore.dll": "", "res://addons/brep/bin/BRepToTopoDS.dll": "", "res://addons/brep/bin/OCCT_Lite.dll": "", "res://addons/brep/bin/OCCT_Tools.dll": "" }

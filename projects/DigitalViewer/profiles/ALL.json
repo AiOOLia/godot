@@ -1,0 +1,17 @@
+{
+  "id": "ALL",
+  "product_name": "DigitalViewer",
+  "description": "Cross-platform 3D and geospatial data viewer",
+  "icon": "res://assets/icon.svg",
+  "theme": "res://themes/digitalviewer_theme.tres",
+  "theme_name": "DigitalViewer · Teal",
+  "template_suffix": "dv_all",
+  "features": { "osg": true, "3dtiles": true, "gis": true, "brep": true },
+  "palette": {
+    "BG": "#0a1014", "SURFACE": "#10181e", "RAISED": "#162128",
+    "HOVER": "#1b272f", "ACTIVE": "#22323b", "LINE": "#243139",
+    "LINE_STRONG": "#33434c", "TEXT": "#e7eef0", "TEXT_2": "#a6b4ba",
+    "TEXT_3": "#6e8088", "ACCENT": "#2cb79a", "ON_ACCENT": "#04130f",
+    "ACCENT_HOVER": "#36cbab", "ACCENT_PRESSED": "#22967e", "ACTIVE_BG": "#193a34"
+  }
+}

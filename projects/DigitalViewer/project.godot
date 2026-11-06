@@ -26,6 +26,10 @@ AppState="*res://scripts/app_state.gd"
 file_logging/enable_file_logging.pc=false
 settings/gdscript/always_track_call_stacks=true
 
+[digital_viewer]
+
+profile="ALL"
+
 [display]
 
 window/size/viewport_width=1440

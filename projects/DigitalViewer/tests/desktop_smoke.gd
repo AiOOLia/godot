@@ -45,6 +45,10 @@ func run(shell: Control) -> void:
 	check(AppState.views.size() == 1, "one initial viewport")
 	var first: String = AppState.active_id
 	check(AppState.views[first].layers.is_empty(), "empty startup with no fake layers")
+	var light_tests := preload("res://tests/desktop_lights.gd").new()
+	add_child(light_tests)
+	await light_tests.run(self, shell, first)
+	light_tests.queue_free()
 	var single_view_scripts := preload("res://tests/desktop_scripts.gd").new()
 	add_child(single_view_scripts)
 	await single_view_scripts.run_single_view_sequence(self, shell, first)

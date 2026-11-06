@@ -2,6 +2,7 @@ extends Node
 ## Scene lifetime is independent of UI panes and native windows.
 signal backdrop_changed
 const Geo = preload("res://scripts/desktop/geo.gd")
+const Profile = preload("res://scripts/desktop/build_profile.gd")
 var id := ""
 var viewport: SubViewport
 var root: Node3D
@@ -21,7 +22,9 @@ var layers: Array[Dictionary] = []
 var selected := ""
 var selection_kind := "viewport"
 var show_viewport_properties := false
+var property_section_expanded: Dictionary = {}
 var selected_node: WeakRef
+var selected_face: Dictionary = {}
 var target := Vector3.ZERO
 var angles := Vector2(0.3, 0.4)
 var distance := 8.0
@@ -35,6 +38,16 @@ var _pick_meshes := {}
 var _frame := 0
 var _render_resize_hold := 0
 var _pick_marker: MeshInstance3D
+var _selection_highlight: Node3D
+
+func highlight_selection(nodes: Array[Node], face: Dictionary = {}) -> void:
+	selected_face = face.duplicate()
+	if not is_instance_valid(_selection_highlight):
+		_selection_highlight = preload("res://scripts/desktop/selection_highlight.gd").new()
+		_selection_highlight.name = "SelectionHighlight"
+		root.add_child(_selection_highlight)
+	_selection_highlight.select_nodes(nodes, face)
+	if is_instance_valid(_pick_marker): _pick_marker.hide()
 
 func _ready() -> void:
 	viewport = SubViewport.new()
@@ -121,6 +134,7 @@ func set_flat_image(path: String) -> void:
 	set_background_mode(3)
 
 func add_light(type := 0) -> Dictionary:
+	type = clampi(type, 0, 2)
 	var node: Light3D
 	match type:
 		1: node = OmniLight3D.new()
@@ -129,12 +143,47 @@ func add_light(type := 0) -> Dictionary:
 	light_serial += 1
 	node.name = "Light_%d" % light_serial
 	root.add_child(node)
+	if type != 0 and is_instance_valid(camera):
+		# Local lights must reach the framed model, including large CAD assemblies.
+		node.position = camera.position
+		var reach := maxf(0.01, camera.position.distance_to(target) * 2.0)
+		if node is OmniLight3D:
+			node.omni_range = reach
+		elif node is SpotLight3D:
+			node.spot_range = reach
+			node.rotation = camera.rotation
 	var entry := {"node": node, "name": node.name, "type": type}
+	if node is DirectionalLight3D:
+		entry["follow_camera"] = false
 	lights.append(entry)
 	if light == null or not is_instance_valid(light):
 		light = node
 	refresh_lighting()
 	return entry
+
+func set_light_follow_camera(node: Light3D, enabled: bool) -> void:
+	if not is_instance_valid(node) or not node is DirectionalLight3D:
+		return
+	for entry in lights:
+		if entry.node != node: continue
+		if bool(entry.get("follow_camera", false)) == enabled: return
+		entry["follow_camera"] = enabled
+		if enabled:
+			entry["manual_basis"] = node.basis
+			_sync_camera_lights()
+		else:
+			node.basis = entry.manual_basis
+			entry.erase("manual_basis")
+		return
+
+func _sync_camera_lights() -> void:
+	if not is_instance_valid(camera): return
+	var camera_basis := camera.global_basis.orthonormalized()
+	for entry in lights:
+		if not entry.get("follow_camera", false): continue
+		var node: Light3D = entry.node
+		if is_instance_valid(node) and node is DirectionalLight3D and not node.global_basis.is_equal_approx(camera_basis):
+			node.global_basis = camera_basis
 
 func remove_light(index: int) -> void:
 	if index < 0 or index >= lights.size():
@@ -200,6 +249,7 @@ func rebuild_world() -> void:
 
 func _process(_delta: float) -> void:
 	_frame += 1
+	_sync_camera_lights()
 	if is_instance_valid(_pick_marker) and is_instance_valid(camera):
 		var marker_size := maxf(0.001, camera.global_position.distance_to(_pick_marker.global_position) * 0.012)
 		_pick_marker.scale = Vector3.ONE * marker_size
@@ -221,6 +271,7 @@ func update_camera() -> void:
 	camera.size = distance
 	camera.near = maxf(0.001, distance / 100000.0)
 	camera.far = maxf(1000.0, distance * 100.0)
+	_sync_camera_lights()
 
 func cancel_flight() -> void:
 	if flight and flight.is_valid():
@@ -260,6 +311,7 @@ func set_render_mode(value: int) -> void:
 	viewport.debug_draw = [Viewport.DEBUG_DRAW_DISABLED, Viewport.DEBUG_DRAW_UNSHADED, Viewport.DEBUG_DRAW_WIREFRAME][render_mode]
 
 func fly_to(longitude: float, latitude: float, height: float) -> void:
+	if not Profile.enabled("gis"): return
 	cancel_flight()
 	var to := Vector2(deg_to_rad(clampf(latitude, -89.9, 89.9)), angles.y + wrapf(deg_to_rad(longitude) - angles.y, -PI, PI))
 	flight = create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN_OUT)
@@ -298,6 +350,7 @@ func object(key: String) -> Object:
 	return null
 
 func set_grid(value: bool) -> void:
+	if not Profile.enabled("gis"): return
 	grid_visible = value
 	for layer in layers:
 		if layer.kind == "ellipsoid" and is_instance_valid(layer.node):
@@ -324,7 +377,7 @@ func pick(at: Vector2) -> Dictionary:
 					best = hit
 					best["layer"] = layer.id
 	last_pick = best
-	if not best.is_empty(): _show_pick_marker(best.position)
+	if not best.is_empty() and not best.has("brep"): _show_pick_marker(best.position)
 	elif is_instance_valid(_pick_marker): _pick_marker.hide()
 	return best
 
@@ -349,7 +402,7 @@ func _show_pick_marker(position: Vector3) -> void:
 	_pick_marker.show()
 
 func _mesh_pick(node: Node, origin: Vector3, direction: Vector3, hits: Array) -> void:
-	if node is MeshInstance3D and node.mesh and node.is_visible_in_tree() and not is_zero_approx(node.global_basis.determinant()):
+	if node is MeshInstance3D and node.mesh and not node.mesh.get_meta("brep_lines", false) and node.is_visible_in_tree() and not is_zero_approx(node.global_basis.determinant()):
 		var transform: Transform3D = node.global_transform
 		var inverse := transform.affine_inverse()
 		var local_origin := inverse * origin
@@ -366,10 +419,21 @@ func _mesh_pick(node: Node, origin: Vector3, direction: Vector3, hits: Array) ->
 					hit.position = transform * hit.position
 					hit.normal = (inverse.basis.transposed() * hit.normal).normalized()
 					hit["distance"] = origin.distance_to(hit.position)
+					if node.mesh.has_meta("brep_face_ranges"):
+						hit["node"] = weakref(node)
+						hit["occurrence"] = node.get_meta("brep_occurrence", -1)
+						hit["object_persistent_id"] = node.get_meta("brep_persistent_id", 0)
+						var triangle: int = hit.get("face_index", -1)
+						for face: Dictionary in node.mesh.get_meta("brep_face_ranges"):
+							if triangle >= face.triangle_first and triangle < face.triangle_first + face.triangle_count:
+								hit["brep"] = face.duplicate()
+								break
 					hits.append(hit)
 	for child in node.get_children(): _mesh_pick(child, origin, direction, hits)
 
 func clear_pick_cache() -> void:
 	_pick_meshes.clear()
 	last_pick.clear()
+	selected_face.clear()
+	if is_instance_valid(_selection_highlight): _selection_highlight.clear()
 	if is_instance_valid(_pick_marker): _pick_marker.hide()

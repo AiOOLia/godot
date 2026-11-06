@@ -6,6 +6,8 @@ const Bridge = preload("res://scripts/desktop/mcp_server.gd")
 const PluginBridge = preload("res://scripts/desktop/plugin_bridge.gd")
 const Dpi = preload("res://scripts/desktop/dpi_scaling.gd")
 const Ui = preload("res://scripts/desktop/ui_widgets.gd")
+const Profile = preload("res://scripts/desktop/build_profile.gd")
+const Sources = preload("res://scripts/desktop/source_resolver.gd")
 var panes: Dictionary = {}
 var _workspace: Control
 var _full: Control
@@ -50,6 +52,7 @@ var _pending: Callable
 var _diagnostics: AcceptDialog
 var _report: TextEdit
 var _properties_dirty := false
+var _brep_inspector: Node
 var _elapsed := 0.0
 var _automation_mode := "mcp"
 var _panel_buttons: Dictionary = {}
@@ -65,7 +68,21 @@ var _split_h_grabber: ImageTexture
 var _split_v_grabber: ImageTexture
 
 func _ready() -> void:
+	if not OS.has_feature("editor"):
+		var mismatch := Profile.template_error()
+		if not mismatch.is_empty():
+			push_error(mismatch)
+			AppState.shutdown()
+			get_tree().quit(1)
+			return
+	if "--dv-check-template" in OS.get_cmdline_user_args():
+		print("DIGITALVIEWER_TEMPLATE_OK " + Profile.id())
+		AppState.shutdown()
+		get_tree().quit()
+		return
 	Strings.install()
+	theme = load(Profile.value("theme")) as Theme
+	get_window().title = Profile.value("product_name")
 	Engine.max_fps = 60
 	get_tree().auto_accept_quit = false
 	get_viewport().gui_embed_subwindows = false
@@ -73,6 +90,9 @@ func _ready() -> void:
 	add_child(Dpi.new())
 	_build()
 	_build_dialogs()
+	_brep_inspector = preload("res://scripts/desktop/brep_inspector.gd").new()
+	add_child(_brep_inspector)
+	_brep_inspector.completed.connect(_state_changed)
 	AppState.changed.connect(_state_changed)
 	AppState.selection_changed.connect(func():
 		_settings_mode = false
@@ -94,6 +114,18 @@ func _ready() -> void:
 	get_window().files_dropped.connect(func(files: PackedStringArray):
 		for file in files: AppState.add_source(AppState.active_id, file))
 	_refresh_properties()
+	if "--dv-brep-test" in OS.get_cmdline_user_args():
+		var brep_test: Node = load("res://tests/brep_smoke.gd").new()
+		add_child(brep_test)
+		brep_test.run.call_deferred(self)
+	if "--dv-profile-test" in OS.get_cmdline_user_args():
+		if not ResourceLoader.exists("res://tests/desktop_profile.gd"):
+			push_error("Use the Windows Validation export preset for profile tests.")
+			get_tree().quit(1)
+			return
+		var profile_test: Node = load("res://tests/desktop_profile.gd").new()
+		add_child(profile_test)
+		profile_test.run.call_deferred(self)
 	if "--dv-smoke-test" in OS.get_cmdline_user_args():
 		if not ResourceLoader.exists("res://tests/desktop_smoke.gd"):
 			push_error("Use the Windows Validation export preset for packaged tests.")
@@ -106,7 +138,7 @@ func _ready() -> void:
 func _apply_window_icon() -> void:
 	if DisplayServer.get_name() == "headless":
 		return
-	var svg := FileAccess.get_file_as_string("res://assets/icon.svg")
+	var svg := FileAccess.get_file_as_string(Profile.value("icon"))
 	if svg.is_empty():
 		return
 	var image := Image.new()
@@ -116,7 +148,7 @@ func _apply_window_icon() -> void:
 
 func _build() -> void:
 	var background := ColorRect.new()
-	background.color = Color("0a1014")
+	background.color = Ui.BG
 	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(background)
@@ -125,45 +157,33 @@ func _build() -> void:
 	root.add_theme_constant_override("separation", 3)
 	add_child(root)
 	var top_panel := PanelContainer.new()
-	top_panel.custom_minimum_size.y = 56
+	top_panel.custom_minimum_size.y = 30
 	top_panel.add_theme_stylebox_override("panel", Ui.box(Ui.RAISED, Ui.LINE, 0, 0, Vector4(10, 0, 10, 0)))
 	root.add_child(top_panel)
 	var top := HBoxContainer.new()
 	top.add_theme_constant_override("separation", 6)
 	top.alignment = BoxContainer.ALIGNMENT_BEGIN
 	top_panel.add_child(top)
-	var brand := MenuButton.new()
-	brand.text = "DigitalViewer  v1.0  ▾"
-	brand.icon = Ui.svg_texture("res://assets/icon.svg")
-	brand.add_theme_constant_override("icon_max_width", 28)
-	brand.expand_icon = false
-	brand.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	brand.add_theme_font_size_override("font_size", 13)
-	brand.custom_minimum_size = Vector2(198, 40)
-	brand.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	Ui.style_button(brand)
-	top.add_child(brand)
-	for text in ["About", "Settings", "Quit"]: brand.get_popup().add_item(tr(text))
-	brand.get_popup().id_pressed.connect(func(index: int):
-		if index == 0: _about()
-		elif index == 1: _settings()
-		else: _quit())
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(spacer)
 	var props_button := Ui.text_icon_button(top, "properties", tr("Properties"), func(): _show_panel("properties"), true)
 	var script_button := Ui.text_icon_button(top, "script", tr("Scripts"), func(): _show_panel("script"))
 	_panel_buttons = {"properties": props_button, "script": script_button}
+	for button in _panel_buttons.values():
+		button.custom_minimum_size.y = 26
+		Ui.style_button(button, button == props_button, true)
 	_fps = Label.new()
 	_fps.text = "60 FPS"
 	_fps.add_theme_color_override("font_color", Ui.ACCENT)
 	_fps.add_theme_font_size_override("font_size", 11)
-	_fps.custom_minimum_size = Vector2(52, 24)
+	_fps.custom_minimum_size = Vector2(52, 20)
 	_fps.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_fps.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	var fps_pill := PanelContainer.new()
-	fps_pill.custom_minimum_size = Vector2(68, 26)
+	fps_pill.custom_minimum_size = Vector2(68, 24)
 	fps_pill.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	fps_pill.add_theme_stylebox_override("panel", Ui.box(Ui.ACCENT_SOFT, Color(0.1725, 0.7176, 0.6039, 0.25), 99, 1, Vector4(7, 2, 7, 2)))
+	fps_pill.add_theme_stylebox_override("panel", Ui.box(Ui.ACCENT_SOFT, Color(Ui.ACCENT, 0.25), 99, 1, Vector4(7, 1, 7, 1)))
 	var fps_row := HBoxContainer.new()
 	fps_row.add_theme_constant_override("separation", 5)
 	fps_row.alignment = BoxContainer.ALIGNMENT_CENTER
@@ -175,7 +195,7 @@ func _build() -> void:
 	fps_row.add_child(_fps)
 	fps_pill.add_child(fps_row)
 	top.add_child(fps_pill)
-	Ui.icon_button(top, "settings", tr("Settings"), _toggle_settings, false, 34, 17)
+	Ui.icon_button(top, "settings", tr("Settings"), _toggle_settings, false, 26, 16)
 	var outer := HSplitContainer.new()
 	_style_split(outer)
 	outer.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -268,7 +288,7 @@ func _style_split(split: SplitContainer) -> void:
 func _make_grabber(size: Vector2i, horizontal: bool) -> ImageTexture:
 	var image := Image.create(size.x, size.y, false, Image.FORMAT_RGBA8)
 	image.fill(Color.TRANSPARENT)
-	var color := Color("#6e8088")
+	var color := Ui.TEXT_3
 	if horizontal:
 		for x in range(4, size.x - 4):
 			image.set_pixel(x, 1, color)
@@ -395,7 +415,7 @@ func dock_view(id: String) -> void:
 func _window(key: String) -> Window:
 	var window := Window.new()
 	window.hide()
-	window.title = "DigitalViewer · " + key
+	window.title = Profile.value("product_name") + " · " + key
 	window.initial_position = Window.WINDOW_INITIAL_POSITION_CENTER_MAIN_WINDOW_SCREEN
 	window.theme = theme
 	add_child(window)
@@ -455,7 +475,7 @@ func _sync_panel_buttons() -> void:
 		var button: Button = _panel_buttons[key]
 		if is_instance_valid(button):
 			var panel: Control = _script if key == "script" else _properties
-			Ui.style_button(button, panel.visible)
+			Ui.style_button(button, panel.visible, true)
 
 func _pane_action(id: String, command: String) -> void:
 	AppState.activate(id)
@@ -560,6 +580,8 @@ func _refresh_properties() -> void:
 		return
 	if is_instance_valid(_property_title): _property_title.text = id.replace("view_", tr("View "))
 	var view: Node = AppState.views[id]
+	if view.selected_face.is_empty():
+		_brep_inspector.clear()
 	if view.selection_kind == "viewport" and not view.show_viewport_properties:
 		_property_title.text = tr("Properties")
 		var hint := _label(_property_fields, tr("Click the viewport title to show viewport properties."))
@@ -584,6 +606,7 @@ func _refresh_properties() -> void:
 		_property_title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	match view.selection_kind:
 		"node":
+			if not view.selected_face.is_empty(): _brep_face_properties(view.selected_face, selected_node)
 			_label(_property_fields, tr("Type") + ": " + selected_node.get_class())
 			var layer: Dictionary = view.get_layer(view.selected)
 			if not layer.is_empty():
@@ -591,151 +614,28 @@ func _refresh_properties() -> void:
 				_label(_property_fields, tr("Status") + ": " + tr(layer.status))
 			var path_label := _label(_property_fields, tr("Node path") + ": " + str(selected_node.get_path()))
 			path_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			if selected_node.has_meta("brep_persistent_id"):
+				_label(_property_fields, "Persistent ID: " + str(selected_node.get_meta("brep_persistent_id")))
+				_label(_property_fields, tr("Occurrence") + ": " + str(selected_node.get_meta("brep_occurrence", -1)))
 			if selected_node is Node3D:
 				_label(_property_fields, tr("Visible") + ": " + tr("Yes" if selected_node.is_visible_in_tree() else "No"))
 				_label(_property_fields, tr("Position") + ": " + str(selected_node.position))
 				_label(_property_fields, tr("Rotation") + ": " + str(selected_node.rotation_degrees))
 				_label(_property_fields, tr("Scale") + ": " + str(selected_node.scale))
+			if layer.get("kind") == "brep" and selected_node.get_parent() == layer.node and selected_node.has_meta("brep_occurrence"):
+				_layer_properties(id, view, layer)
 		"camera":
 			_label(_property_fields, tr("Type") + ": " + view.camera.get_class())
 			_choice(_property_fields, "Navigation", ["Orbit", "Fly (WASD / QE)"], view.camera_mode, func(value: int): view.camera_mode = value)
 			_choice(_property_fields, "Projection", ["Perspective", "Orthographic"], view.camera.projection, func(value: int): view.camera.projection = value)
 			_number(_property_fields, "FOV", view.camera.fov, 10, 120, 1, func(value: float): view.camera.fov = value)
 			_button(_property_fields, "Viewpoints", _viewpoints.bind(id))
-			_button(_property_fields, "Fly to", _fly_dialog.bind(id))
+			if Profile.enabled("gis"): _button(_property_fields, "Fly to", _fly_dialog.bind(id))
 		"layer":
 			var layer: Dictionary = view.get_layer(view.selected)
-			if layer.is_empty(): return
-			var layer_fields := _property_section("Layer")
-			var name_caption := _label(layer_fields, tr("Name"))
-			name_caption.add_theme_font_size_override("font_size", 12)
-			name_caption.add_theme_color_override("font_color", Ui.TEXT_2)
-			var name_field := LineEdit.new()
-			name_field.text = layer.name
-			name_field.text_submitted.connect(func(value: String):
-				layer.name = value.left(128)
-				var script_id: String = AppState.store.records[layer.data_id].get("script_id", "")
-				if AppState.scripts.documents.has(script_id):
-					AppState.scripts.documents[script_id].filename = layer.name
-					if _script.selected_id == script_id: _script._filename.text = layer.name
-					AppState.scripts._sync(script_id)
-				AppState.changed.emit())
-			layer_fields.add_child(name_field)
-			var meta := _label(layer_fields, "%s  ·  %s  ·  %s %d" % [layer.kind, tr(layer.status), tr("References"), AppState.store.reference_count(layer.data_id)])
-			meta.add_theme_font_size_override("font_size", 11)
-			meta.add_theme_color_override("font_color", Ui.TEXT_3)
-			_compact_check(layer_fields, tr("Visible"), layer.visible, func(value: bool): AppState.set_visible(id, layer.id, value))
-			if layer.kind == "tiled":
-				_compact_label(layer_fields, tr("Receive lighting"))
-				var light_row := HBoxContainer.new()
-				light_row.add_theme_constant_override("separation", 4)
-				layer_fields.add_child(light_row)
-				var lighting_mode: int = int(layer.get("receive_lighting_mode", -1))
-				for light_index in 3:
-					var mode_index: int = [-1, 1, 0][light_index]
-					var light_tile := Button.new()
-					light_tile.text = tr(["Source default", "Receive lighting", "Unlit"][light_index])
-					light_tile.toggle_mode = true
-					light_tile.button_pressed = lighting_mode == mode_index
-					light_tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-					light_tile.custom_minimum_size.y = 28
-					light_tile.add_theme_font_size_override("font_size", 10)
-					Ui.style_button(light_tile, lighting_mode == mode_index, true)
-					light_tile.pressed.connect(func():
-						layer["receive_lighting_mode"] = mode_index
-						if is_instance_valid(layer.node) and layer.node.has_method("set_receive_lighting_mode"):
-							layer.node.call("set_receive_lighting_mode", mode_index)
-						else:
-							AppState.store.rebuild_instance(id, layer)
-						AppState.changed.emit())
-					light_row.add_child(light_tile)
-			if layer.kind != "tiled":
-				_compact_number(layer_fields, tr("Opacity"), layer.opacity, 0.0, 1.0, 0.05, func(value: float): AppState.set_opacity(id, layer.id, value))
-			if layer.kind == "ellipsoid":
-				_compact_check(layer_fields, tr("Grid"), view.grid_visible, func(value: bool): view.set_grid(value))
-			var download: Dictionary = AppState.store.records[layer.data_id].get("download", {})
-			if not download.is_empty():
-				var progress := _label(layer_fields, "%s: %d / %d · %.2f MiB" % [tr("Download"), download.completed, download.dependencies, download.bytes / 1048576.0])
-				progress.add_theme_font_size_override("font_size", 11)
-				progress.add_theme_color_override("font_color", Ui.TEXT_3)
-			if not layer.error.is_empty():
-				var error_label := _label(layer_fields, layer.error)
-				error_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-				error_label.add_theme_color_override("font_color", Color("f07a82"))
-			if layer.kind == "script":
-				var script_id: String = AppState.store.records[layer.data_id].get("script_id", "")
-				if AppState.scripts.documents.has(script_id):
-					var script_actions := _property_section("Actions")
-					var run_row := HBoxContainer.new()
-					run_row.add_theme_constant_override("separation", 6)
-					script_actions.add_child(run_row)
-					var open_button := _button(run_row, tr("Open in workbench"), func(): _open_script(script_id))
-					open_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-					var run_button := _button(run_row, tr("▶ Run"), func():
-						_open_script(script_id)
-						_script._request_run())
-					run_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-					_button(script_actions, tr("Stop script"), AppState.scripts.documents[script_id].runner.stop)
-			else:
-				var transform_fields := _property_section("Transform")
-				if is_instance_valid(layer.node):
-					_transform_fields(transform_fields, layer)
-				if layer.kind == "gltf" and is_instance_valid(layer.node):
-					for player in layer.node.find_children("*", "AnimationPlayer", true, false):
-						var animations: Array = Array(player.get_animation_list())
-						if not animations.is_empty():
-							_compact_choice(transform_fields, "Animation", ["Stopped"] + animations, 0, func(value: int):
-								if not is_instance_valid(player): return
-								if value == 0: player.stop()
-								else: player.play(animations[value - 1]))
-				var actions := _property_section("Actions")
-				var navigation_row := HBoxContainer.new()
-				navigation_row.add_theme_constant_override("separation", 6)
-				actions.add_child(navigation_row)
-				var frame_button := _button(navigation_row, tr("Frame layer"), func(): AppState.store.frame_layer(id, layer))
-				frame_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				var pause_button := _button(navigation_row, tr("Pause / resume"), func(): AppState.store.pause(id, layer.id, not layer.paused))
-				pause_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				var order_row := HBoxContainer.new()
-				order_row.add_theme_constant_override("separation", 6)
-				actions.add_child(order_row)
-				var up_button := _button(order_row, tr("Move up"), func(): AppState.reorder(id, layer.id, -1))
-				up_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				var down_button := _button(order_row, tr("Move down"), func(): AppState.reorder(id, layer.id, 1))
-				down_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				var data_row := HBoxContainer.new()
-				data_row.add_theme_constant_override("separation", 6)
-				actions.add_child(data_row)
-				if layer.kind != "script" or not AppState.store.records[layer.data_id].has("script_id"):
-					var reload_button := _button(data_row, tr("Reload"), func():
-						if AppState.store.reference_count(layer.data_id) > 1: _ask("Reload shared data in all referencing viewports?", func(): AppState.store.reload_data(layer.data_id))
-						else: AppState.store.reload_data(layer.data_id))
-					reload_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				var remove_button := _button(data_row, tr("Remove"), func():
-					var script_id: String = AppState.store.records[layer.data_id].get("script_id", "")
-					if AppState.scripts.documents.has(script_id):
-						_open_script(script_id)
-						_script._request_remove(script_id)
-					else: AppState.remove_layer(id, layer.id))
-				remove_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			if view.last_pick.get("layer", "") == layer.id:
-				var pick_fields := _property_section("Picked point")
-				var pick_text := _label(pick_fields, str(view.last_pick.get("position", Vector3.ZERO)))
-				pick_text.add_theme_font_size_override("font_size", 11)
-				pick_text.add_theme_color_override("font_color", Ui.TEXT_3)
-				var pick_actions := HBoxContainer.new()
-				pick_actions.add_theme_constant_override("separation", 6)
-				pick_fields.add_child(pick_actions)
-				var focus_button := _button(pick_actions, tr("Focus picked point"), func():
-					view.target = view.last_pick.position
-					view.distance = maxf(0.01, view.distance * 0.25)
-					view.update_camera())
-				focus_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				var copy_button := _button(pick_actions, tr("Copy details"), func(): DisplayServer.clipboard_set(AppState.redact(str(view.last_pick))))
-				copy_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			if not layer.is_empty(): _layer_properties(id, view, layer)
 		_:
-			var sun := _first_sun(view)
-			var background := _property_section("Background")
+			var background := _viewport_property_section("Background", view)
 			var background_tiles := HBoxContainer.new()
 			background_tiles.add_theme_constant_override("separation", 4)
 			background.add_child(background_tiles)
@@ -779,27 +679,6 @@ func _refresh_properties() -> void:
 				var sky_fields := VBoxContainer.new()
 				sky_fields.add_theme_constant_override("separation", 6)
 				background.add_child(sky_fields)
-				if is_instance_valid(sun):
-					var sun_label := _label(sky_fields, tr("Sun"))
-					sun_label.add_theme_font_size_override("font_size", 12)
-					sun_label.add_theme_color_override("font_color", Ui.TEXT_2)
-					var elevation_callback := func(value: float):
-						sun.rotation_degrees = Vector3(-value, sun.rotation_degrees.y, 0.0)
-					var azimuth_callback := func(value: float):
-						sun.rotation_degrees = Vector3(sun.rotation_degrees.x, value, 0.0)
-					var angle_row := HBoxContainer.new()
-					angle_row.add_theme_constant_override("separation", 8)
-					sky_fields.add_child(angle_row)
-					var elevation_field := _make_slider_field(tr("Elevation"), -sun.rotation_degrees.x, -90.0, 90.0, 0.1, elevation_callback, "°")
-					elevation_field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-					angle_row.add_child(elevation_field)
-					var azimuth_field := _make_slider_field(tr("Azimuth"), fposmod(sun.rotation_degrees.y, 360.0), 0.0, 360.0, 0.1, azimuth_callback, "°")
-					azimuth_field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-					angle_row.add_child(azimuth_field)
-					_compact_color(sky_fields, tr("Color"), sun.light_color, func(value: Color): sun.light_color = value)
-					_compact_number(sky_fields, tr("Energy"), sun.light_energy, 0.0, 20.0, 0.1, func(value: float): sun.light_energy = value)
-					_compact_number(sky_fields, tr("Shadow distance"), sun.directional_shadow_max_distance, 1.0, 5000.0, 10.0, func(value: float): sun.directional_shadow_max_distance = value)
-					_compact_check(sky_fields, tr("Shadow"), sun.shadow_enabled, func(value: bool): sun.shadow_enabled = value)
 				var sky_light_label := _label(sky_fields, tr("Sky light"))
 				sky_light_label.add_theme_font_size_override("font_size", 12)
 				sky_light_label.add_theme_color_override("font_color", Ui.TEXT_2)
@@ -812,7 +691,7 @@ func _refresh_properties() -> void:
 					_compact_color(sky_fields, tr("Ground"), sky_material.ground_bottom_color, func(value: Color): sky_material.ground_bottom_color = value)
 					_compact_number(sky_fields, tr("Sky energy"), sky_material.energy_multiplier, 0.0, 8.0, 0.05, func(value: float): sky_material.energy_multiplier = value)
 
-			var rendering := _property_section("Rendering")
+			var rendering := _viewport_property_section("Rendering", view)
 			_compact_choice(rendering, tr("Anti-aliasing"), ["Off", "2x", "4x", "8x"], view.viewport.msaa_3d, func(value: int):
 				view.viewport.msaa_3d = value
 				AppState.changed.emit())
@@ -830,49 +709,104 @@ func _refresh_properties() -> void:
 				view.environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC if value else Environment.TONE_MAPPER_LINEAR)
 			_compact_check(rendering, tr("Global illumination"), view.environment.sdfgi_enabled, func(value: bool): view.environment.sdfgi_enabled = value)
 
-			var lights := _property_section("Lights")
-			var extra_lights := 0
-			for entry in view.lights:
-				if is_instance_valid(entry.node) and not entry.node is DirectionalLight3D: extra_lights += 1
-			if extra_lights == 0:
-				var empty := _label(lights, tr("No additional lights"))
-				empty.add_theme_font_size_override("font_size", 11)
-				empty.add_theme_color_override("font_color", Ui.TEXT_3)
+			_light_properties(view)
+
+func _light_properties(view: Node) -> void:
+	var lights := _viewport_property_section("Lights", view)
+	lights.name = "Lights"
+	var count := 0
+	for entry in view.lights:
+		var light_node: Light3D = entry.node
+		if not is_instance_valid(light_node): continue
+		count += 1
+		var card := PanelContainer.new()
+		card.name = light_node.name
+		card.add_theme_stylebox_override("panel", Ui.box(Ui.RAISED, Ui.LINE, 5, 1, Vector4(7, 6, 7, 6)))
+		lights.add_child(card)
+		var fields := VBoxContainer.new()
+		fields.add_theme_constant_override("separation", 5)
+		card.add_child(fields)
+		var head := HBoxContainer.new()
+		head.add_theme_constant_override("separation", 4)
+		fields.add_child(head)
+		var type_name := "Directional" if light_node is DirectionalLight3D else ("Point" if light_node is OmniLight3D else "Spot")
+		var title := _label(head, tr(type_name) + " · " + str(light_node.name))
+		title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		title.add_theme_font_size_override("font_size", 11)
+		Ui.icon_button(head, "close", tr("Remove"), func():
 			for index in view.lights.size():
-				var light_index: int = index
-				var entry: Dictionary = view.lights[index]
-				var light_node: Light3D = entry.node
-				if not is_instance_valid(light_node) or light_node is DirectionalLight3D: continue
-				var card := PanelContainer.new()
-				card.add_theme_stylebox_override("panel", Ui.box(Ui.RAISED, Ui.LINE, 5, 1, Vector4(7, 6, 7, 6)))
-				lights.add_child(card)
-				var light_fields := VBoxContainer.new()
-				light_fields.add_theme_constant_override("separation", 5)
-				card.add_child(light_fields)
-				var head := HBoxContainer.new()
-				head.add_theme_constant_override("separation", 4)
-				light_fields.add_child(head)
-				var light_name := _label(head, str(light_node.name))
-				light_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-				light_name.add_theme_font_size_override("font_size", 11)
-				Ui.icon_button(head, "close", tr("Remove"), func():
-					view.remove_light(light_index)
-					AppState.changed.emit(), false, 22, 10)
-				_compact_label(light_fields, tr("Type") + ": " + tr(["Directional", "Point", "Spot"][int(entry.type)])).add_theme_font_size_override("font_size", 10)
-				_compact_number(light_fields, tr("Energy"), light_node.light_energy, 0, 10, 0.1, func(value: float): light_node.light_energy = value)
-				_compact_color(light_fields, tr("Color"), light_node.light_color, func(value: Color): light_node.light_color = value)
-				_compact_check(light_fields, tr("Shadow"), light_node.shadow_enabled, func(value: bool): light_node.shadow_enabled = value)
-				_compact_check(light_fields, tr("Visible"), light_node.visible, func(value: bool):
-					light_node.visible = value
-					view.refresh_lighting())
-			var add_row := HBoxContainer.new()
-			add_row.add_theme_constant_override("separation", 6)
-			lights.add_child(add_row)
-			var add_point := _button(add_row, tr("Add point light"), func():
-				view.add_light(1)
+				if view.lights[index].node == light_node:
+					view.remove_light(index)
+					AppState.changed.emit()
+					break, false, 22, 10)
+		_compact_check(fields, tr("Visible"), light_node.visible, func(value: bool):
+			light_node.visible = value
+			view.refresh_lighting())
+		_compact_number(fields, tr("Energy"), light_node.light_energy, 0.0, maxf(20.0, light_node.light_energy), 0.1, func(value: float): light_node.light_energy = value)
+		_compact_color(fields, tr("Color"), light_node.light_color, func(value: Color): light_node.light_color = value)
+		_compact_check(fields, tr("Shadow"), light_node.shadow_enabled, func(value: bool): light_node.shadow_enabled = value)
+		if light_node is DirectionalLight3D:
+			var follow_camera: bool = entry.get("follow_camera", false)
+			_compact_check(fields, tr("Follow camera"), follow_camera, func(value: bool):
+				view.set_light_follow_camera(light_node, value)
 				AppState.changed.emit())
-			add_point.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			add_point.custom_minimum_size.y = 26
+			if not follow_camera:
+				_light_direction_fields(fields, light_node)
+			_compact_number(fields, tr("Shadow distance"), light_node.directional_shadow_max_distance, 0.0, maxf(5000.0, light_node.directional_shadow_max_distance), 1.0, func(value: float): light_node.directional_shadow_max_distance = value)
+		else:
+			_light_position_fields(fields, light_node)
+			if light_node is OmniLight3D:
+				_compact_number(fields, tr("Range"), light_node.omni_range, 0.001, maxf(100.0, light_node.omni_range * 2.0), 0.001, func(value: float): light_node.omni_range = value)
+				_compact_number(fields, tr("Attenuation"), light_node.omni_attenuation, 0.0, maxf(10.0, light_node.omni_attenuation), 0.1, func(value: float): light_node.omni_attenuation = value)
+			elif light_node is SpotLight3D:
+				_light_direction_fields(fields, light_node)
+				_compact_number(fields, tr("Range"), light_node.spot_range, 0.001, maxf(100.0, light_node.spot_range * 2.0), 0.001, func(value: float): light_node.spot_range = value)
+				_compact_number(fields, tr("Attenuation"), light_node.spot_attenuation, 0.0, maxf(10.0, light_node.spot_attenuation), 0.1, func(value: float): light_node.spot_attenuation = value)
+				_compact_number(fields, tr("Spot angle"), light_node.spot_angle, 0.1, 89.9, 0.1, func(value: float): light_node.spot_angle = value, "°")
+				_compact_number(fields, tr("Spot attenuation"), light_node.spot_angle_attenuation, 0.0, maxf(10.0, light_node.spot_angle_attenuation), 0.1, func(value: float): light_node.spot_angle_attenuation = value)
+	if count == 0:
+		var empty := _label(lights, tr("No lights"))
+		empty.add_theme_font_size_override("font_size", 11)
+		empty.add_theme_color_override("font_color", Ui.TEXT_3)
+	var add_row := HBoxContainer.new()
+	add_row.add_theme_constant_override("separation", 6)
+	lights.add_child(add_row)
+	for type in 3:
+		var add := _button(add_row, tr(["Add directional light", "Add point light", "Add spot light"][type]), func():
+			view.add_light(type)
+			AppState.changed.emit())
+		add.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		add.custom_minimum_size.y = 26
+
+func _light_direction_fields(parent: Node, light_node: Light3D) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	parent.add_child(row)
+	var elevation := _make_slider_field(tr("Elevation"), -light_node.rotation_degrees.x, -90.0, 90.0, 0.1, func(value: float): light_node.rotation_degrees.x = -value, "°")
+	elevation.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(elevation)
+	var azimuth := _make_slider_field(tr("Azimuth"), fposmod(light_node.rotation_degrees.y, 360.0), 0.0, 360.0, 0.1, func(value: float): light_node.rotation_degrees.y = value, "°")
+	azimuth.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(azimuth)
+
+func _light_position_fields(parent: Node, light_node: Light3D) -> void:
+	_compact_label(parent, tr("Position"))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	parent.add_child(row)
+	for axis in 3:
+		var spin := SpinBox.new()
+		spin.prefix = ["X", "Y", "Z"][axis]
+		spin.min_value = -10000000.0
+		spin.max_value = 10000000.0
+		spin.allow_greater = true
+		spin.allow_lesser = true
+		spin.step = 0.001
+		spin.value = light_node.position[axis]
+		spin.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		spin.get_line_edit().custom_minimum_size.x = 40
+		spin.value_changed.connect(func(value: float): light_node.position[axis] = value)
+		row.add_child(spin)
 
 func _transform_fields(parent: Node, layer: Dictionary) -> void:
 	var node: Node3D = layer.node
@@ -898,12 +832,6 @@ func _transform_fields(parent: Node, layer: Dictionary) -> void:
 				node.set(field, vector)
 				layer["transform"] = node.transform)
 			row.add_child(spin)
-
-func _first_sun(view: Node) -> DirectionalLight3D:
-	for entry in view.lights:
-		if is_instance_valid(entry.node) and entry.node is DirectionalLight3D:
-			return entry.node
-	return null
 
 func _choose_background_image(view: Node, panorama := false) -> void:
 	var picker := FileDialog.new()
@@ -937,7 +865,7 @@ func _build_dialogs() -> void:
 	_file.use_native_dialog = true
 	_file.access = FileDialog.ACCESS_FILESYSTEM
 	_file.file_mode = FileDialog.FILE_MODE_OPEN_FILES
-	_file.filters = PackedStringArray(["*.glb,*.gltf,*.json,*.b3dm,*.i3dm,*.pnts,*.cmpt,*.osg,*.osgb,*.zip,*.gd;Supported data"])
+	_file.filters = Profile.file_filters()
 	_file.file_selected.connect(func(path: String): _add_pending_paths(PackedStringArray([path])))
 	_file.files_selected.connect(_add_pending_paths)
 	add_child(_file)
@@ -1032,6 +960,10 @@ func _build_add_dialog() -> void:
 		["Cesium ion 3D Tiles", "layers", "Asset ID and session token"],
 		["GDScript script", "script", ".gd runtime behavior"],
 	]
+	if not Profile.enabled("3dtiles") and not Profile.enabled("osg"):
+		sources[0][2] = "glTF / GLB / ZIP"
+		sources[1][2] = "HTTP(S) / glTF / GLB"
+	if Profile.enabled("brep"): sources[0][2] += " / BREP / BREP JSON / assembly JSON"
 	_kind = OptionButton.new()
 	_kind.hide()
 	content.add_child(_kind)
@@ -1051,6 +983,9 @@ func _build_add_dialog() -> void:
 		button.pressed.connect(_select_add_kind.bind(index))
 		grid.add_child(button)
 		_add_source_buttons.append(button)
+		var available := _add_kind_available(index)
+		button.visible = available
+		_kind.set_item_disabled(index, not available)
 	_add_source_row = HBoxContainer.new()
 	_add_source_row.add_theme_constant_override("separation", 6)
 	content.add_child(_add_source_row)
@@ -1102,8 +1037,9 @@ func _build_add_dialog() -> void:
 	_zip_entry = LineEdit.new()
 	content.add_child(_zip_entry)
 	_axis = OptionButton.new()
-	_axis.add_item("OSG: Z-Up")
-	_axis.add_item("OSG: Y-Up")
+	_axis.add_item("Y-UP")
+	_axis.add_item("Z-UP")
+	_axis.tooltip_text = tr("Up axis")
 	content.add_child(_axis)
 	_ion_fields = VBoxContainer.new()
 	content.add_child(_ion_fields)
@@ -1145,12 +1081,16 @@ func _build_add_dialog() -> void:
 	add_button.add_theme_color_override("font_color", Ui.ON_ACCENT)
 	add_button.add_theme_color_override("icon_normal_color", Ui.ON_ACCENT)
 	add_button.add_theme_stylebox_override("normal", Ui.box(Ui.ACCENT, Color.TRANSPARENT, 7, 0, Vector4(12, 5, 12, 5)))
-	add_button.add_theme_stylebox_override("hover", Ui.box(Color("#36cbab"), Color.TRANSPARENT, 7, 0, Vector4(12, 5, 12, 5)))
+	add_button.add_theme_stylebox_override("hover", Ui.box(Ui.ACCENT_HOVER, Color.TRANSPARENT, 7, 0, Vector4(12, 5, 12, 5)))
 	add_button.pressed.connect(_confirm_add)
 	footer.add_child(add_button)
 	_kind.item_selected.connect(_update_add_kind)
 
+func _add_kind_available(index: int) -> bool:
+	return (index != 2 or Profile.enabled("gis")) and (index != 3 or Profile.enabled("3dtiles"))
+
 func _select_add_kind(index: int) -> void:
+	if not _add_kind_available(index): return
 	if index not in [0, 4]:
 		_pending_sources.clear()
 		_refresh_pending_box()
@@ -1160,13 +1100,13 @@ func _select_add_kind(index: int) -> void:
 func _update_add_kind(index: int) -> void:
 	_source.editable = index < 2 or index == 4
 	_add_script_hint.visible = index == 4
-	_add_folder.visible = index == 0
+	_add_folder.visible = index == 0 and Profile.enabled("osg")
 	_add_browse.visible = index in [0, 4]
 	_add_source_row.visible = index not in [2, 3]
-	_axis.visible = index < 2
+	_axis.visible = index < 2 and (Profile.enabled("brep") or Profile.enabled("osg"))
 	_add_zip_label.visible = index == 0
 	_zip_entry.visible = index == 0
-	_file.filters = PackedStringArray(["*.gd;GDScript"]) if index == 4 else PackedStringArray(["*.glb,*.gltf,*.json,*.b3dm,*.i3dm,*.pnts,*.cmpt,*.osg,*.osgb,*.zip,*.gd;Supported data"])
+	_file.filters = PackedStringArray(["*.gd;GDScript"]) if index == 4 else Profile.file_filters()
 	_ion_fields.visible = index == 3
 	_http_fields.visible = index == 1
 	for card_index in _add_source_buttons.size():
@@ -1219,6 +1159,7 @@ func _remove_pending(index: int) -> void:
 		_refresh_pending_box()
 
 func _add_directory_matching(id: String, directory: String, options: Dictionary) -> bool:
+	if not Profile.enabled("osg"): return false
 	var base := directory.get_file()
 	for extension in [".osgb", ".osg"]:
 		var candidate := directory.path_join(base + extension)
@@ -1230,10 +1171,13 @@ func _add_directory_matching(id: String, directory: String, options: Dictionary)
 func _add_osgb_source(id: String, path: String, options: Dictionary) -> String:
 	return AppState.add_source(id, path, "auto", options)
 
+func _import_options(entry := "") -> Dictionary:
+	return {"entry": entry, "z_up": _axis.selected == 1}
+
 func _add_multi_sources() -> void:
 	var id := _target_id
 	if not AppState.views.has(id): return
-	var options := {"entry": "", "z_up": _axis.selected == 0}
+	var options := _import_options()
 	var added := 0
 	for path in _pending_sources:
 		if _kind.selected == 4:
@@ -1367,7 +1311,7 @@ func _browse_folder() -> void:
 	add.add_theme_color_override("font_color", Ui.ON_ACCENT)
 	add.add_theme_color_override("icon_normal_color", Ui.ON_ACCENT)
 	add.add_theme_stylebox_override("normal", Ui.box(Ui.ACCENT, Color.TRANSPARENT, 7, 0, Vector4(12, 5, 12, 5)))
-	add.add_theme_stylebox_override("hover", Ui.box(Color("#36cbab"), Color.TRANSPARENT, 7, 0, Vector4(12, 5, 12, 5)))
+	add.add_theme_stylebox_override("hover", Ui.box(Ui.ACCENT_HOVER, Color.TRANSPARENT, 7, 0, Vector4(12, 5, 12, 5)))
 	add.pressed.connect(func():
 		var selected: Array[String] = []
 		for index in list.get_selected_items(): selected.append(list.get_item_metadata(index))
@@ -1397,9 +1341,10 @@ func _choose_add_directory(path: LineEdit, refresh: Callable) -> void:
 
 func _confirm_add() -> void:
 	if not AppState.views.has(_target_id): return
+	if not _add_kind_available(_kind.selected): return
 	var id := _target_id
 	var source := _source.text.strip_edges()
-	var options := {"entry": _zip_entry.text.strip_edges(), "z_up": _axis.selected == 0}
+	var options := _import_options(_zip_entry.text.strip_edges())
 	if not _pending_sources.is_empty() and _kind.selected in [0, 4]:
 		_add_multi_sources()
 		return
@@ -1463,8 +1408,10 @@ func _confirm_add() -> void:
 			AppState.add_source(id, source, "auto", options)
 		else:
 			var candidates: Array[String] = []
-			for entry in inspection.entries:
-				if entry.name.get_extension().to_lower() in ["glb", "gltf", "osg", "osgb"] or entry.name.get_file() == "tileset.json": candidates.append(entry.name)
+			var archive := ZIPReader.new()
+			if archive.open(source) == OK:
+				candidates = Sources.zip_candidates(archive, Profile.features())
+				archive.close()
 			_select_entry(candidates, func(entry: String):
 				options.entry = entry
 				if AppState.views.has(id): AppState.add_source(id, source, "auto", options)
@@ -1483,13 +1430,13 @@ func _find_entries(base: String, path: String, candidates: Array[String], budget
 	var directory := DirAccess.open(path)
 	if directory == null or budget[0] <= 0: return
 	# A tileset is the entry for its entire directory, including child models.
-	if FileAccess.file_exists(path.path_join("tileset.json")):
+	if Profile.enabled("3dtiles") and Profile.model_entry(path.path_join("tileset.json")):
 		candidates.append(path.path_join("tileset.json").trim_prefix(base + "/").trim_prefix(base + "\\"))
 		return
 	for filename in directory.get_files():
 		budget[0] -= 1
 		if budget[0] < 0: return
-		if filename.get_extension().to_lower() in ["gltf", "glb", "osg", "osgb"]:
+		if Profile.model_entry(path.path_join(filename)):
 			candidates.append(path.path_join(filename).trim_prefix(base + "/").trim_prefix(base + "\\"))
 	for child in directory.get_directories():
 		budget[0] -= 1
@@ -1518,6 +1465,7 @@ func _select_entry(candidates: Array[String], callback: Callable) -> void:
 
 func _open_add(id: String) -> void:
 	_target_id = id
+	_axis.select(0)
 	_pending_sources.clear()
 	_refresh_pending_box()
 	_add_target.text = id.replace("view_", tr("View "))
@@ -1531,6 +1479,7 @@ func _ask(message: String, callback: Callable) -> void:
 	Dpi.popup(_confirm, Vector2i(520, 180), panes[AppState.active_id].get_window())
 
 func _fly_dialog(id: String) -> void:
+	if not Profile.enabled("gis"): return
 	var dialog := ConfirmationDialog.new()
 	dialog.title = tr("Fly to") + " · " + id
 	var box := VBoxContainer.new()
@@ -1630,7 +1579,206 @@ func _settings_section(title: String, expanded := true) -> VBoxContainer:
 		header.icon = Ui.icon("chevron-down" if body.visible else "chevron-right"))
 	return body
 
-func _property_section(title: String, expanded := true) -> VBoxContainer:
+func _layer_properties(id: String, view: Node, layer: Dictionary) -> void:
+	var layer_fields := _property_section("Layer")
+	var name_caption := _label(layer_fields, tr("Name"))
+	name_caption.add_theme_font_size_override("font_size", 12)
+	name_caption.add_theme_color_override("font_color", Ui.TEXT_2)
+	var name_field := LineEdit.new()
+	name_field.text = layer.name
+	name_field.text_submitted.connect(func(value: String):
+		layer.name = value.left(128)
+		var script_id: String = AppState.store.records[layer.data_id].get("script_id", "")
+		if AppState.scripts.documents.has(script_id):
+			AppState.scripts.documents[script_id].filename = layer.name
+			if _script.selected_id == script_id: _script._filename.text = layer.name
+			AppState.scripts._sync(script_id)
+		AppState.changed.emit())
+	layer_fields.add_child(name_field)
+	var meta := _label(layer_fields, "%s  ·  %s  ·  %s %d" % [layer.kind, tr(layer.status), tr("References"), AppState.store.reference_count(layer.data_id)])
+	meta.add_theme_font_size_override("font_size", 11)
+	meta.add_theme_color_override("font_color", Ui.TEXT_3)
+	_compact_check(layer_fields, tr("Visible"), layer.visible, func(value: bool): AppState.set_visible(id, layer.id, value))
+	if layer.kind == "tiled":
+		_compact_label(layer_fields, tr("Receive lighting"))
+		var light_row := HBoxContainer.new()
+		light_row.add_theme_constant_override("separation", 4)
+		layer_fields.add_child(light_row)
+		var lighting_mode: int = int(layer.get("receive_lighting_mode", -1))
+		for light_index in 3:
+			var mode_index: int = [-1, 1, 0][light_index]
+			var light_tile := Button.new()
+			light_tile.text = tr(["Source default", "Receive lighting", "Unlit"][light_index])
+			light_tile.toggle_mode = true
+			light_tile.button_pressed = lighting_mode == mode_index
+			light_tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			light_tile.custom_minimum_size.y = 28
+			light_tile.add_theme_font_size_override("font_size", 10)
+			Ui.style_button(light_tile, lighting_mode == mode_index, true)
+			light_tile.pressed.connect(func():
+				layer["receive_lighting_mode"] = mode_index
+				if is_instance_valid(layer.node) and layer.node.has_method("set_receive_lighting_mode"):
+					layer.node.call("set_receive_lighting_mode", mode_index)
+				else:
+					AppState.store.rebuild_instance(id, layer)
+				AppState.changed.emit())
+			light_row.add_child(light_tile)
+	if layer.kind != "tiled":
+		_compact_number(layer_fields, tr("Opacity"), layer.opacity, 0.0, 1.0, 0.05, func(value: float): AppState.set_opacity(id, layer.id, value))
+	if layer.kind == "ellipsoid":
+		_compact_check(layer_fields, tr("Grid"), view.grid_visible, func(value: bool): view.set_grid(value))
+	if layer.kind == "brep":
+		var data: Dictionary = AppState.store.records[layer.data_id]
+		var stats: Dictionary = data.get("brep_stats", {})
+		if not stats.is_empty():
+			_label(layer_fields, "BREP %s · %d %s · %d %s" % [stats.format_version, stats.faces, tr("Faces"), stats.triangles, tr("Triangles")])
+			if stats.get("unit_to_millimeters", 0.0) > 0.0:
+				_label(layer_fields, tr("Millimeters per source unit") + ": " + str(stats.unit_to_millimeters))
+			else:
+				_label(layer_fields, tr("Units: unknown (source coordinates)"))
+		for warning in data.get("brep_warnings", []):
+			var warning_label := _label(layer_fields, str(warning))
+			warning_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var download: Dictionary = AppState.store.records[layer.data_id].get("download", {})
+	if not download.is_empty():
+		var progress := _label(layer_fields, "%s: %d / %d · %.2f MiB" % [tr("Download"), download.completed, download.dependencies, download.bytes / 1048576.0])
+		progress.add_theme_font_size_override("font_size", 11)
+		progress.add_theme_color_override("font_color", Ui.TEXT_3)
+	if not layer.error.is_empty():
+		var error_label := _label(layer_fields, layer.error)
+		error_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		error_label.add_theme_color_override("font_color", Color("f07a82"))
+	if layer.kind == "script":
+		var script_id: String = AppState.store.records[layer.data_id].get("script_id", "")
+		if AppState.scripts.documents.has(script_id):
+			var script_actions := _property_section("Actions")
+			var run_row := HBoxContainer.new()
+			run_row.add_theme_constant_override("separation", 6)
+			script_actions.add_child(run_row)
+			var open_button := _button(run_row, tr("Open in workbench"), func(): _open_script(script_id))
+			open_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			var run_button := _button(run_row, tr("▶ Run"), func():
+				_open_script(script_id)
+				_script._request_run())
+			run_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			_button(script_actions, tr("Stop script"), AppState.scripts.documents[script_id].runner.stop)
+	else:
+		var transform_fields := _property_section("Transform")
+		if is_instance_valid(layer.node):
+			_transform_fields(transform_fields, layer)
+		if layer.kind == "gltf" and is_instance_valid(layer.node):
+			for player in layer.node.find_children("*", "AnimationPlayer", true, false):
+				var animations: Array = Array(player.get_animation_list())
+				if not animations.is_empty():
+					_compact_choice(transform_fields, "Animation", ["Stopped"] + animations, 0, func(value: int):
+						if not is_instance_valid(player): return
+						if value == 0: player.stop()
+						else: player.play(animations[value - 1]))
+		var actions := _property_section("Actions")
+		var navigation_row := HBoxContainer.new()
+		navigation_row.add_theme_constant_override("separation", 6)
+		actions.add_child(navigation_row)
+		var frame_button := _button(navigation_row, tr("Frame layer"), func(): AppState.store.frame_layer(id, layer))
+		frame_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var pause_button := _button(navigation_row, tr("Pause / resume"), func(): AppState.store.pause(id, layer.id, not layer.paused))
+		pause_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var order_row := HBoxContainer.new()
+		order_row.add_theme_constant_override("separation", 6)
+		actions.add_child(order_row)
+		var up_button := _button(order_row, tr("Move up"), func(): AppState.reorder(id, layer.id, -1))
+		up_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var down_button := _button(order_row, tr("Move down"), func(): AppState.reorder(id, layer.id, 1))
+		down_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var data_row := HBoxContainer.new()
+		data_row.add_theme_constant_override("separation", 6)
+		actions.add_child(data_row)
+		if layer.kind != "script" or not AppState.store.records[layer.data_id].has("script_id"):
+			var reload_button := _button(data_row, tr("Reload"), func():
+				if AppState.store.reference_count(layer.data_id) > 1: _ask("Reload shared data in all referencing viewports?", func(): AppState.store.reload_data(layer.data_id))
+				else: AppState.store.reload_data(layer.data_id))
+			reload_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var remove_button := _button(data_row, tr("Remove"), func():
+			var script_id: String = AppState.store.records[layer.data_id].get("script_id", "")
+			if AppState.scripts.documents.has(script_id):
+				_open_script(script_id)
+				_script._request_remove(script_id)
+			else: AppState.remove_layer(id, layer.id))
+		remove_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	if view.last_pick.get("layer", "") == layer.id:
+		var pick_fields := _property_section("Picked point")
+		var pick_text := _label(pick_fields, str(view.last_pick.get("position", Vector3.ZERO)))
+		pick_text.add_theme_font_size_override("font_size", 11)
+		pick_text.add_theme_color_override("font_color", Ui.TEXT_3)
+		var pick_actions := HBoxContainer.new()
+		pick_actions.add_theme_constant_override("separation", 6)
+		pick_fields.add_child(pick_actions)
+		var focus_button := _button(pick_actions, tr("Focus picked point"), func():
+			view.target = view.last_pick.position
+			view.distance = maxf(0.01, view.distance * 0.25)
+			view.update_camera())
+		focus_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var copy_button := _button(pick_actions, tr("Copy details"), func(): DisplayServer.clipboard_set(AppState.redact(str(view.last_pick))))
+		copy_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+func _brep_face_properties(face: Dictionary, selected_node: Node) -> void:
+	var fields := _property_section("BREP definition")
+	fields.name = "BRepDefinitionFields"
+	_label(fields, tr("Face index") + ": " + str(face.get("face_index", -1)))
+	_label(fields, tr("Face persistent ID") + ": " + str(face.get("persistent_id", 0)))
+	var definition: Dictionary = face.get("definition", {})
+	var document: RefCounted = selected_node.mesh.get_meta("brep_document") if selected_node is MeshInstance3D and selected_node.mesh != null and selected_node.mesh.has_meta("brep_document") else null
+	if document == null or definition.is_empty():
+		_brep_inspector.clear()
+		_label(fields, tr("BREP definition unavailable; reload the model."))
+		return
+	if definition.has("source_face_index"):
+		_label(fields, tr("Source face index") + ": " + str(definition.source_face_index))
+	else:
+		var mapping := _label(fields, tr("Source face mapping is ambiguous; original JSON contains all candidate faces.") if definition.get("source_mapping") == "ambiguous" else tr("Source face mapping unavailable."))
+		mapping.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_label(fields, tr("Source face indices") + ": " + str(definition.get("source_face_indices", [])))
+	var units := _label(fields, tr("Source geometry coordinates; before assembly and display transforms."))
+	units.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	units.add_theme_color_override("font_color", Ui.TEXT_3)
+	var hint := _label(fields, tr("Exported geometry uses the original face. OCC JSON is reconstructed on demand and may contain multiple repaired faces.") if definition.get("source_mapping") == "source_index" else tr("Original JSON contains the full source face; OCC JSON contains the selected reconstructed face."))
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var output: Dictionary = _brep_inspector.inspect(document, int(face.get("face_index", -1)))
+	if output.is_empty():
+		_label(fields, tr("Exporting face BREP JSON..."))
+		return
+	_brep_json_field(fields, "Original BREP JSON", "SourceBRep", str(output.get("source_json", "")), str(output.get("source_error", "")))
+	_brep_json_field(fields, "OCC reconstructed BREP JSON", "ReconstructedBRep", str(output.get("reconstructed_json", "")), str(output.get("reconstructed_error", "")))
+
+func _brep_json_field(parent: Node, title: String, prefix: String, text: String, error: String) -> void:
+	var caption := _label(parent, tr(title))
+	caption.add_theme_font_size_override("font_size", 13)
+	if not error.is_empty():
+		var message := _label(parent, tr("JSON export failed") + ": " + error)
+		message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		message.add_theme_color_override("font_color", Color("f07a82"))
+		return
+	var copy_button := _button(parent, "Copy JSON", func():
+		DisplayServer.clipboard_set(text)
+		AppState.status_changed.emit(tr("BREP definition copied")))
+	copy_button.name = "Copy" + prefix
+	var editor := TextEdit.new()
+	editor.name = prefix + "Text"
+	editor.editable = false
+	editor.custom_minimum_size.y = 220
+	editor.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	editor.add_theme_font_size_override("font_size", 12)
+	# Keep the SDK's exact string, including full precision and topology schema.
+	editor.text = text.left(65536)
+	parent.add_child(editor)
+	if text.length() > 65536:
+		var hint := _label(parent, tr("Preview truncated; copy to obtain the full definition."))
+		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+
+func _viewport_property_section(title: String, view: Node) -> VBoxContainer:
+	return _property_section(title, view.property_section_expanded.get(title, false), func(expanded: bool):
+		view.property_section_expanded[title] = expanded)
+
+func _property_section(title: String, expanded := true, on_toggled: Callable = Callable()) -> VBoxContainer:
 	var card := PanelContainer.new()
 	card.add_theme_stylebox_override("panel", Ui.box(Ui.SURFACE, Ui.LINE, 7, 1, Vector4(9, 7, 9, 8)))
 	_property_fields.add_child(card)
@@ -1654,7 +1802,8 @@ func _property_section(title: String, expanded := true) -> VBoxContainer:
 	body.add_child(fields)
 	header.pressed.connect(func():
 		fields.visible = not fields.visible
-		header.icon = Ui.icon("chevron-down" if fields.visible else "chevron-right"))
+		header.icon = Ui.icon("chevron-down" if fields.visible else "chevron-right")
+		if on_toggled.is_valid(): on_toggled.call(fields.visible))
 	return fields
 
 func _compact_row(parent: Node) -> HBoxContainer:
@@ -1807,11 +1956,12 @@ func _build_settings_panel() -> void:
 	var ui := _settings_section("UI")
 	_choice(ui, tr("Language"), ["English", "简体中文"], 1 if TranslationServer.get_locale().begins_with("zh") else 0, func(index: int):
 		TranslationServer.set_locale("zh_CN" if index == 1 else "en"))
-	_choice(ui, tr("Theme"), [tr("Dark")], 0, func(_index: int): pass)
-	var theme_note := _label(ui, tr("Light theme is not available in this build."))
+	_choice(ui, tr("Theme"), [Profile.value("theme_name")], 0, func(_index: int): pass)
+	var theme_note := _label(ui, "%s · %s" % [Profile.value("product_name"), Profile.id()])
 	theme_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	theme_note.add_theme_color_override("font_color", Ui.TEXT_3)
 	theme_note.add_theme_font_size_override("font_size", 11)
+	_button(ui, tr("About"), _about)
 
 	var mcp := _settings_section("MCP")
 	_check(mcp, tr("Enable local bridge"), AppState.bridge.enabled, func(value: bool):
@@ -1924,8 +2074,8 @@ func _export_report() -> void:
 
 func _about() -> void:
 	var dialog := AcceptDialog.new()
-	dialog.title = "DigitalViewer 1.0.0"
-	dialog.dialog_text = Engine.get_version_info().string + "\n\n" + tr("Desktop preview; see release status for unimplemented geospatial features.")
+	dialog.title = Profile.value("product_name") + " 1.0.0"
+	dialog.dialog_text = Engine.get_version_info().string + "\n\n" + Profile.id() + " · " + Profile.value("description")
 	dialog.confirmed.connect(dialog.queue_free)
 	dialog.canceled.connect(dialog.queue_free)
 	add_child(dialog)

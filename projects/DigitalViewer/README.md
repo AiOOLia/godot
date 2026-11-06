@@ -6,7 +6,7 @@
 
 ## 运行
 
-Windows 可直接解压 `build/DigitalViewer-1.0.0-windows-x86_64-preview.zip`，双击同目录的 `DigitalViewer.exe`，保留旁边的 PCK。包内含使用说明、许可证和源码/制品散列。
+Windows 可直接解压 `build/DigitalViewer-ALL-1.0.0-windows-x86_64-preview.zip` 或 `build/DigitalViewer-CAD-1.0.0-windows-x86_64-preview.zip`，双击同目录的 `DigitalViewer.exe`，保留旁边的 PCK。包内含使用说明、产品配置、许可证和源码/制品散列。
 
 在仓库根目录执行：
 
@@ -18,6 +18,7 @@ Windows 可直接解压 `build/DigitalViewer-1.0.0-windows-x86_64-preview.zip`�
 
 ## 已接通的桌面功能
 
+- CAD/ALL 均支持本地 NDS BREP、独立几何/装配 JSON、ZIP 依赖、装配结构和多视口共享；同名 `.geom` 有效时直接加载导出的离散面/线段并跳过 OCC 重建与离散，缺失或无效时回退原流程；直接复用已有 BRepCore/BRepToTopoDS DLL。已适配新版源形体到修复结果的映射及格式 1.3 单位元数据；支持单击面高亮、结构树部分/装配高亮及多选。构建、接口和限制见 [BREP 预览版](docs/brep-preview.md)。
 - 递归左右/上下分屏，独立 World3D、相机、环境、图层栈和会话视点；极小视口保留操作菜单。
 - 视口、属性和脚本面板可分离到原生窗口并停靠；全屏视口退出后恢复原分屏树。
 - Windows 主窗口、浮动窗口和弹窗按所在屏幕的系统 DPI 缩放，支持跨屏更新；保持原有字号，3D 视口按实际像素渲染。
@@ -59,15 +60,17 @@ Plugin Bridge 地址为 `http://127.0.0.1:8731/bridge`，不使用 MCP 的 `init
 
 ## 验证与构建
 
+支持 `-Profile ALL`（默认）和 `-Profile CAD`。CAD 关闭 OSG/OSGB、3D Tiles/Cesium ion 和 GIS，使用独立蓝灰主题与工程立方体图标；保留现有 glTF/GLB 查看和脚本能力。首次使用 `Build-Desktop.ps1 -Profile CAD -BuildTemplate` 编译不包含相关原生模块的专用模板。详见 [配置构建说明](docs/build-profiles.md)。
+
 ```powershell
 .\projects\DigitalViewer\tools\Build-Desktop.ps1 -Preset 'Windows Validation'
-.\projects\DigitalViewer\tools\Test-Desktop.ps1 -Pack -Engine E:/WorkSpace/GitHub/godot/projects/DigitalViewer/build/validation/DigitalViewer.console.exe
-.\projects\DigitalViewer\tools\Test-Desktop.ps1 -Pack -Engine E:/WorkSpace/GitHub/godot/projects/DigitalViewer/build/validation/DigitalViewer.console.exe -Graphics -Capture
+.\projects\DigitalViewer\tools\Test-Desktop.ps1 -Pack -Engine E:/WorkSpace/GitHub/godot/projects/DigitalViewer/build/validation/ALL/DigitalViewer.console.exe
+.\projects\DigitalViewer\tools\Test-Desktop.ps1 -Pack -Engine E:/WorkSpace/GitHub/godot/projects/DigitalViewer/build/validation/ALL/DigitalViewer.console.exe -Graphics -Capture
 .\projects\DigitalViewer\tools\Build-Desktop.ps1
 py -3 .\projects\DigitalViewer\tools\Test-BridgeClients.py --engine .\bin\godot.windows.editor.dev.x86_64.console.exe --project .\projects\DigitalViewer
 ```
 
-完整导出需要 `export_presets.cfg` 指定的同版定制模板；不使用仓库中旧版 `digital_viewer` 或 4.7.2 官方模板。生成制品位于 `build/desktop/`。Linux/macOS 只有预设，未在本机验收。当前预置开发编辑器的模块内容早于发布模板，PNTS/I3DM 验证必须使用新模板生成的验证包；版本字符串相同不代表模块相同。
+完整导出需要同版定制模板；不使用仓库中旧版 `digital_viewer` 或 4.7.2 官方模板。生成制品位于 `build/desktop/ALL/` 和 `build/desktop/CAD/`。Linux/macOS 只有预设，未在本机验收。当前预置开发编辑器的模块内容早于发布模板，PNTS/I3DM 验证必须使用新模板生成的验证包；版本字符串相同不代表模块相同。
 
 跨屏 DPI 同样需要新构建的 Windows 模板。预置编辑器没有新增的 `display/window/dpi/per_monitor_dpi_aware` 支持，不能代替导出包验证跨屏缩放；升级包应同时替换 EXE/PCK。
 
