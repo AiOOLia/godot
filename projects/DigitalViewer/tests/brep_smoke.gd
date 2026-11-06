@@ -71,6 +71,7 @@ func run(shell: Control) -> void:
 		var a: MeshInstance3D = layer.node.get_child(0).get_child(0).get_child(0)
 		var b: MeshInstance3D = layer.node.get_child(0).get_child(1).get_child(0)
 		check(a.mesh == b.mesh, "instances share mesh resources")
+		check(not a.mesh.surface_get_material(0).depth_bias_enabled, "BREP without edge geometry keeps unbiased surface depth")
 		check(is_equal_approx(b.get_parent().position.x, 20), "column-major assembly translation applied")
 		check(a.get_meta("brep_persistent_id") == 10, "persistent ID retained")
 		check(not a.mesh.get_meta("brep_face_ranges").is_empty(), "face ranges retained")
@@ -154,6 +155,7 @@ func run(shell: Control) -> void:
 	await _definition_fixtures(directory, view, shell)
 	await _json_imports(directory, view, shell, AppState.views[view].get_layer(layer_id))
 	await _tessellation_imports(directory, view, shell)
+	await preload("res://tests/material_depth_bias.gd").new().run(self)
 	await _up_axis(shell, view, binary, json, archive)
 	var dataset := OS.get_environment("DV_TEST_DATASET")
 	if not dataset.is_empty():
@@ -171,6 +173,7 @@ func run(shell: Control) -> void:
 		if real.status == "Ready":
 			await get_tree().process_frame
 			var real_view: Node = AppState.views[view]
+			check(is_equal_approx(real_view.camera.near, 0.2), "real BREP camera keeps the fixed near plane")
 			var hit := _dataset_hit(real_view, real.id)
 			check(not hit.is_empty() and hit.has("brep"), "real assembly has a selectable visible face")
 			if not hit.is_empty():
@@ -597,6 +600,10 @@ func _tessellation_imports(directory: String, view_id: String, shell: Control) -
 		var lines: Array[Node] = meshes.filter(func(n: Node): return n.mesh.get_meta("brep_lines", false))
 		check(surfaces.size() == (2 if entry == assembly else 1) and lines.size() == surfaces.size(), "GEOM creates face and line meshes for each instance")
 		check(lines[0].mesh.surface_get_primitive_type(0) == Mesh.PRIMITIVE_LINES, "exported edges use line primitives")
+		var face_material: StandardMaterial3D = surfaces[0].mesh.surface_get_material(0)
+		var edge_material: StandardMaterial3D = lines[0].mesh.surface_get_material(0)
+		check(face_material.depth_bias_enabled and face_material.depth_bias_constant_factor == 0.5 and face_material.depth_bias_slope_factor == 0.5, "GEOM faces use hardware polygon offset")
+		check(not edge_material.depth_bias_enabled and edge_material.shading_mode == BaseMaterial3D.SHADING_MODE_UNSHADED, "GEOM edges retain ordinary material and unmodified depth")
 		var arrays: Array = surfaces[0].mesh.surface_get_arrays(0)
 		check(arrays[Mesh.ARRAY_VERTEX].size() == 8 and arrays[Mesh.ARRAY_NORMAL][0].z > 0.99, "exported positions stay unchanged and missing normals are generated from buffers")
 		if entry == assembly:

@@ -14,6 +14,10 @@ static func create(result: Dictionary, options: Dictionary) -> Node3D:
 	material.albedo_color = Color("b4c3d4")
 	material.roughness = 0.65
 	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# Bias filled faces only when the import includes edges. Lines keep their original depth.
+	material.depth_bias_constant_factor = 0.5
+	material.depth_bias_slope_factor = 0.5
+	material.depth_bias_enabled = result.bodies.any(func(body: Dictionary) -> bool: return body.get("lines", false) and not body.indices.is_empty())
 	var line_material := StandardMaterial3D.new()
 	line_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	line_material.albedo_color = Color("455568")

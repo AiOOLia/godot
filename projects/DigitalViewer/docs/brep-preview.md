@@ -38,6 +38,32 @@ godot-cpp 使用已有 Godot 4.1.4 单精度 Release 库，已在当前 Godot 4.
 - 离散路径选中面后才从源快照提取对应面，调用 DLL 按需重建并输出 OCC JSON，不调用离散器；如果源面修复后拆成多个面，OCC JSON 包含这些结果并在属性中说明。重建失败仍显示原始 JSON，不影响已有网格。OCC 回退路径保留原有结果面语义。
 - 原始二进制或 JSON 快照及 OCC 转换器（如已创建）随共享网格保留，ZIP 临时文件或外部文件变化不会改变已加载模型的导出数据。几何 JSON 输入选面时，扩展从 DLL 解析对象选取对应面和依赖拓扑并重排引用索引，曲面/曲线参数保持原样，最终由 DLL 的 `JsonWriter::write` 输出原始面 JSON。面 JSON 在后台按需生成，单个工作线程只发布最新选择；文档内缓存最多 16 个结果。超长 JSON 预览限制为 65536 字符并提示截断，复制包含全文，退出等待当前导出线程结束。
 
+## 面与边线的硬件深度偏移
+
+引擎在 `Material` 上增加 `depth_bias_enabled`、`depth_bias_constant_factor`、`depth_bias_slope_factor`，支持 Inspector、GDScript 和资源保存。默认关闭；正值将填充三角面深度推远，负值拉近，各后端在 reverse Z 下统一方向。Compatibility 使用 `glPolygonOffset`；Forward+ 和 Mobile 使用 RenderingDevice 的管线光栅化状态，材质参数参与管线缓存与预编译。运行时也可通过 `RenderingServer.material_set_depth_bias(material_rid, enabled, constant_factor, slope_factor)` 更新。
+
+BREP 导入结果存在边线时，仅面材质启用 `constant_factor = 0.5`、`slope_factor = 0.5`。独立边线仍是 `ArrayMesh / PRIMITIVE_LINES + StandardMaterial3D`，保持原始坐标和深度测试；没有边线时面材质不启用偏移。颜色、相机深度预绘制和运动矢量使用一致设置，阴影贴图、材质烘焙和 SDF 生成不应用该偏移。没有添加线深度着色器。
+
+桌面视口的近裁剪距离统一固定为 `near = 0.2`，在创建相机时设置，导航时不再改写。已移除按导航距离、图层类型和可见性切换近裁剪面的逻辑及每帧检查。远裁剪距离仍为 `far = max(1000, distance * 100)`。
+
+偏移单位由 GPU 深度格式定义，并非世界坐标距离。过大的常量或坡度仍可能使极薄结构后的线透出，掠射角也会放大坡度项；硬件偏移不能修复面/边离散数据本身不重合的问题。当前参数通过透视/正交、1 和 10000 倍模型尺度、近距离遮挡、共享着色器材质隔离、动态开关、资源往返及阴影保持检查；未在其他显卡上验证。D3D12 清零偏移的问题一并修复，但当前 Windows 构建关闭 D3D12，Metal 和 D3D12 尚未实机验证。
+
+复测：
+
+```powershell
+.\projects\DigitalViewer\tools\Test-Desktop.ps1 -Profile CAD -BRepOnly -Graphics -RenderingMethod gl_compatibility
+.\projects\DigitalViewer\tools\Test-Desktop.ps1 -Profile CAD -BRepOnly -Graphics -RenderingMethod forward_plus
+.\projects\DigitalViewer\tools\Test-Desktop.ps1 -Profile CAD -BRepOnly -Graphics -RenderingMethod mobile
+```
+
+2026-11-06 硬件偏移验收：新编辑器及 CAD/ALL Release 模板已生成，正式与验证包已重新导出。RTX 3080 Laptop / OpenGL 3.3 与 Vulkan 1.3 上，三种渲染器分别在开启/关闭深度预绘制时通过 30 项专项检查；共面线连续率均为 100%，遮挡样本无透线，90 个投影阴影采样不变。合成模型面宽 8、遮挡间隔 0.05，这不代表任意薄层的保证。CAD 源码及导出 OpenGL、CAD 导出 Forward+、ALL 源码及导出 Forward+ 的真实 CNC BREP 回归各通过 390 项；CAD/ALL 导出配置分别通过 68/59 项。EXE/PCK、BREP 脚本及依赖 DLL 哈希与清单一致。
+
+CNC 透线复查曾采用按导航距离调整近裁剪面的版本，三种渲染器各 70 项、CAD/ALL CNC 回归各 431 项通过；该动态策略现已按要求移除，历史结果不代表固定 `0.2` 的任意尺度遮挡保证。硬件专项保留三个视角、透视/正交、1/10000 倍完整场景缩放和 0.02 遮挡间隔；合成测试的相机随测试场景整体缩放，独立验证硬件偏移。真实 CNC 回归另行检查应用相机的近裁剪距离固定为 `0.2`。
+
+固定 `near = 0.2` 后，CAD/OpenGL 加载真实 CNC 数据的 BREP 回归通过 423 项，含相机近裁剪面固定值检查。该结果不代表任意模型尺度和薄层结构的遮挡保证。本次只修改应用，无需再次重建引擎。
+
+此前额外运行的 ALL 完整桌面套件未全部通过，涉及属性面板旧断言、原生 OSG 拾取、本地 HTTP 会话断言及 DPI 测试访问已不存在的 `_menu`。原有未修改编辑器也复现这些失败；本轮未修改相关业务代码。测试日志保存在仓库 `.tmp_tests/depth-bias-*.log`。
+
 ## 当前限制
 
 - 支持 NDSBREP 二进制，不支持 OCCT 文本 BREP，不新增 STEP/IGES/DWG 导入。

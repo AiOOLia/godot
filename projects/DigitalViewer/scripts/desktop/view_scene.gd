@@ -229,7 +229,7 @@ func _build_world() -> void:
 	camera = Camera3D.new()
 	camera.name = "Camera"
 	camera.fov = 48
-	camera.near = 0.01
+	camera.near = 0.2
 	camera.far = 100000000.0
 	root.add_child(camera)
 	camera.current = true
@@ -269,7 +269,6 @@ func update_camera() -> void:
 	camera.position = target + direction * distance
 	camera.look_at(target, Vector3.UP)
 	camera.size = distance
-	camera.near = maxf(0.001, distance / 100000.0)
 	camera.far = maxf(1000.0, distance * 100.0)
 	_sync_camera_lights()
 

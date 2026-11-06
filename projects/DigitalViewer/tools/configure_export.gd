@@ -48,7 +48,7 @@ func _initialize() -> void:
 		var options := section + ".options"
 		presets.set_value(section, "custom_features", "dv_" + id.to_lower())
 		var includes: String = presets.get_value(section, "include_filter", "")
-		if arguments.get("--dv-preset") == "Windows Validation": includes += ",tests/brep_smoke.gd"
+		if arguments.get("--dv-preset") == "Windows Validation": includes += ",tests/brep_smoke.gd,tests/material_depth_bias.gd,tests/desktop_lights.gd"
 		presets.set_value(section, "include_filter", includes + ",scripts/desktop/*.gd,profiles/%s.json,assets/*.svg,assets/profile_icon.png,themes/*.tres,addons/brep/*.gdextension" % id)
 		var excludes: String = presets.get_value(section, "exclude_filter", "")
 		presets.set_value(section, "exclude_filter", excludes + ",tools/*,build/*,profiles/%s.json" % ("ALL" if id == "CAD" else "CAD"))

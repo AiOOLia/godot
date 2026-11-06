@@ -2,7 +2,7 @@
 
 基于定制 Godot 4.7.3-rc。当前已经从演示 UI 骨架切换为真实桌面运行时；**尚未满足完整 v1.0 发布门槛**。具体已实现能力、限制与验证记录见 [桌面实现状态](docs/desktop-v1.md)。产品范围仍以 [FEATURE_CHECKLIST.md](FEATURE_CHECKLIST.md) 为准。
 
-引擎 DPI 补丁、OSG / 瓦片 / Draco 等定制及升级迁移要求统一记录在 [Godot 源码修改清单](../../GODOT_SOURCE_CHANGES.md)。
+对 Godot 原有代码的 DPI、材质深度偏移和 glTF 接入修改及升级要求记录在 [Godot 源码修改清单](../../GODOT_SOURCE_CHANGES.md)。独立新增模块和第三方库由各自目录的文档维护。
 
 ## 运行
 

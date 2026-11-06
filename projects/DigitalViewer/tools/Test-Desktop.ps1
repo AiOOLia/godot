@@ -6,6 +6,7 @@ param(
     [ValidateSet('ALL', 'CAD')][string]$Profile = 'ALL',
     [switch]$ProfileOnly,
     [switch]$BRepOnly,
+    [ValidateSet('', 'gl_compatibility', 'forward_plus', 'mobile')][string]$RenderingMethod = '',
     [string]$Dataset = '',
     [switch]$DatasetNavigate,
     [switch]$DatasetExpectEmpty,
@@ -25,6 +26,7 @@ $frameLimit = if ($Dataset) { [string][Math]::Max(3000, ($DatasetSeconds + 30) *
 $arguments = @('--path', $projectPath, '--resolution', '1366x768', '--quit-after', $frameLimit)
 if ($Pack) { $arguments = @('--resolution', '1366x768', '--quit-after', $frameLimit) }
 if (-not $Graphics) { $arguments += '--headless' }
+if ($RenderingMethod) { $arguments += @('--rendering-method', $RenderingMethod) }
 $arguments += @('--', "--dv-profile=$Profile", $(if ($BRepOnly) { '--dv-brep-test' } elseif ($ProfileOnly) { '--dv-profile-test' } else { '--dv-smoke-test' }))
 if ($Capture) { $arguments += '--dv-capture' }
 $previousTestDirectory = $env:DV_TEST_DIRECTORY
