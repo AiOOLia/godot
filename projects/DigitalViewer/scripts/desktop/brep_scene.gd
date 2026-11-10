@@ -33,6 +33,7 @@ static func create(result: Dictionary, options: Dictionary) -> Node3D:
 			mesh.surface_set_material(0, line_material if body.get("lines", false) else material)
 		mesh.set_meta("brep_lines", body.get("lines", false))
 		mesh.set_meta("brep_face_ranges", body.face_ranges)
+		if body.has("edge_ranges"): mesh.set_meta("brep_edge_ranges", body.edge_ranges)
 		mesh.set_meta("brep_document", result.document)
 		meshes.append(mesh)
 	var nodes: Array[Node3D] = []
@@ -53,6 +54,7 @@ static func create(result: Dictionary, options: Dictionary) -> Node3D:
 			var body: Dictionary = result.bodies[body_index]
 			var instance := MeshInstance3D.new()
 			instance.name = "Body_%d_%d" % [body.body_type, body.body_index]
+			if body.get("lines", false): instance.name = "Edges_%d_%d" % [body.body_type, body.body_index]
 			if body.has("tessellation_id"):
 				instance.name = "Edges_%d" % body.tessellation_id if body.get("lines", false) else instance.name + "_Tess_%d" % body.tessellation_id
 			instance.mesh = meshes[body_index]

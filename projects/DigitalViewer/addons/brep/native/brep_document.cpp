@@ -3,13 +3,16 @@
 #include <BRepToTopoDS.h>
 #include "source_json_selection.h"
 #include "tessellation_import.h"
+#include <BRepAdaptor_Curve.hxx>
 #include <BRepBndLib.hxx>
 #include <BRepMesh_IncrementalMesh.hxx>
 #include <BRep_Tool.hxx>
 #include <Bnd_Box.hxx>
+#include <GCPnts_TangentialDeflection.hxx>
 #include <Poly_Triangulation.hxx>
 #include <Standard_Failure.hxx>
 #include <TopExp_Explorer.hxx>
+#include <TopExp.hxx>
 #include <TopoDS.hxx>
 #include <godot_cpp/classes/ref_counted.hpp>
 #include <godot_cpp/core/class_db.hpp>
@@ -260,7 +263,8 @@ public:
             stage = 3;
             Array bodies, nodes;
             std::map<std::pair<int, uint32_t>, int> cache;
-            int total_triangles = 0, missing_faces = 0, node_count = 0;
+            std::map<int, int> edge_bodies;
+            int total_triangles = 0, total_lines = 0, missing_faces = 0, missing_edges = 0, node_count = 0;
             double quality = options.get("deflection_scale", 1.0);
             if (!std::isfinite(quality) || quality < 0.1 || quality > 10.0) throw std::runtime_error("Invalid BREP deflection scale (0.1..10).");
             auto mesh_body = [&](int type, uint32_t index) -> int {
@@ -348,9 +352,81 @@ public:
                 Dictionary body;
                 body["vertices"] = vertices; body["normals"] = normals; body["indices"] = indices;
                 body["face_ranges"] = ranges; body["body_type"] = type; body["body_index"] = index;
+                body["lines"] = false;
                 int result = bodies.size();
                 bodies.append(body); cache[key] = result;
+
+                // Use topological edges, not triangle wireframe. Shared/seam edges
+                // occur once per body, and use the face mesh's boundary nodes.
+                NCollection_IndexedMap<TopoDS_Shape, TopTools_ShapeMapHasher> edges;
+                TopExp::MapShapes(shape, TopAbs_EDGE, edges);
+                PackedVector3Array edge_vertices;
+                PackedInt32Array edge_indices;
+                Array edge_ranges;
+                for (int e = 1; e <= edges.Extent(); ++e) {
+                    checkpoint();
+                    auto edge = TopoDS::Edge(edges(e));
+                    if (BRep_Tool::Degenerated(edge)) continue;
+                    std::vector<gp_Pnt> points;
+                    try {
+                        TopLoc_Location location;
+                        occ::handle<Poly_PolygonOnTriangulation> polygon;
+                        occ::handle<Poly_Triangulation> triangulation;
+                        BRep_Tool::PolygonOnTriangulation(edge, polygon, triangulation, location);
+                        if (!polygon.IsNull() && !triangulation.IsNull() && polygon->NbNodes() >= 2) {
+                            for (int n = 1; n <= polygon->NbNodes(); ++n)
+                                points.push_back(triangulation->Node(polygon->Node(n)).Transformed(location.Transformation()));
+                        } else {
+                            const auto &polyline = BRep_Tool::Polygon3D(edge, location);
+                            if (!polyline.IsNull() && polyline->NbNodes() >= 2) {
+                                for (const auto &point : polyline->Nodes()) points.push_back(point.Transformed(location.Transformation()));
+                            } else {
+                                BRepAdaptor_Curve curve(edge);
+                                if (!std::isfinite(curve.FirstParameter()) || !std::isfinite(curve.LastParameter()))
+                                    throw std::runtime_error("Unbounded OCC edge.");
+                                GCPnts_TangentialDeflection samples(curve, 0.4, deflection);
+                                for (int n = 1; n <= samples.NbPoints(); ++n) points.push_back(samples.Value(n));
+                            }
+                        }
+                        for (const auto &p : points)
+                            if (!std::isfinite(p.X()) || !std::isfinite(p.Y()) || !std::isfinite(p.Z()))
+                                throw std::runtime_error("Non-finite OCC edge vertex.");
+                        if (points.size() < 2) throw std::runtime_error("No OCC edge polyline.");
+                    } catch (const Standard_Failure &error) {
+                        ++missing_edges; warnings.append("OCC edge meshing failed: " + utf8(error.what())); continue;
+                    } catch (const std::exception &error) {
+                        ++missing_edges; warnings.append("OCC edge meshing failed: " + utf8(error.what())); continue;
+                    }
+                    if (points.size() - 1 > static_cast<size_t>(4000000 - total_lines))
+                        throw std::runtime_error("BREP mesh exceeds the 4 million line preview budget.");
+                    if (points.size() > static_cast<size_t>(6000000 - edge_vertices.size()))
+                        throw std::runtime_error("BREP body exceeds the 6 million edge vertex budget.");
+                    const int first_vertex = edge_vertices.size(), first_line = edge_indices.size() / 2;
+                    for (const auto &p : points) edge_vertices.append(Vector3(p.X(), p.Y(), p.Z()));
+                    for (int n = 1; n < static_cast<int>(points.size()); ++n) {
+                        if (points[n - 1].SquareDistance(points[n]) == 0.0) continue;
+                        edge_indices.append(first_vertex + n - 1); edge_indices.append(first_vertex + n);
+                        ++total_lines;
+                    }
+                    Dictionary range;
+                    range["edge_index"] = e - 1; // Body-local repaired topology order.
+                    range["line_first"] = first_line; range["line_count"] = edge_indices.size() / 2 - first_line;
+                    edge_ranges.append(range);
+                }
+                if (edge_indices.size()) {
+                    Dictionary lines;
+                    lines["vertices"] = edge_vertices; lines["normals"] = PackedVector3Array(); lines["indices"] = edge_indices;
+                    lines["face_ranges"] = Array(); lines["edge_ranges"] = edge_ranges;
+                    lines["body_type"] = type; lines["body_index"] = index; lines["lines"] = true;
+                    edge_bodies[result] = bodies.size(); bodies.append(lines);
+                }
                 return result;
+            };
+            auto append_body = [&](PackedInt32Array &references, int type, uint32_t index) {
+                const int body = mesh_body(type, index);
+                references.append(body);
+                auto edges = edge_bodies.find(body);
+                if (edges != edge_bodies.end()) references.append(edges->second);
             };
             std::function<void(const ModelTransfer::Object &, int, int)> visit;
             visit = [&](const ModelTransfer::Object &object, int parent, int depth) {
@@ -371,13 +447,13 @@ public:
                     if (object.repBodyIndex >= parsed.solids.size()) throw std::runtime_error("Assembly source solid index is out of range.");
                     std::vector<uint32_t> solids, shells;
                     converter.getShapeBySourceSolidIndex(object.repBodyIndex, solids, shells);
-                    for (auto index : solids) references.append(mesh_body(static_cast<int>(ModelTransfer::BRT_SOLID), index));
-                    for (auto index : shells) references.append(mesh_body(static_cast<int>(ModelTransfer::BRT_SHELL), index));
+                    for (auto index : solids) append_body(references, static_cast<int>(ModelTransfer::BRT_SOLID), index);
+                    for (auto index : shells) append_body(references, static_cast<int>(ModelTransfer::BRT_SHELL), index);
                     if (solids.empty() && shells.empty()) warnings.append("Source solid has no repaired display body.");
                 } else if (object.bRepBodyType == ModelTransfer::BRT_SHELL) {
                     if (object.repBodyIndex >= parsed.shells.size()) throw std::runtime_error("Assembly source shell index is out of range.");
                     const auto &shells = converter.sourceShellResultIndices(object.repBodyIndex);
-                    for (auto index : shells) references.append(mesh_body(static_cast<int>(ModelTransfer::BRT_SHELL), index));
+                    for (auto index : shells) append_body(references, static_cast<int>(ModelTransfer::BRT_SHELL), index);
                     if (shells.empty()) warnings.append("Source shell has no repaired display body.");
                 } else if (object.bRepBodyType == ModelTransfer::BRT_WIRE) {
                     warnings.append("Wire-only body is not displayed by this preview.");
@@ -397,7 +473,7 @@ public:
                     Dictionary node;
                     node["parent"] = -1; node["name"] = String(type == static_cast<int>(ModelTransfer::BRT_SOLID) ? "Solid " : "Shell ") + String::num_int64(index);
                     PackedInt32Array references;
-                    references.append(mesh_body(type, index));
+                    append_body(references, type, index);
                     node["persistent_id"] = 0; node["bodies"] = references; nodes.append(node);
                 };
                 for (int i = 0; i < converter.numSolids(); ++i) {
@@ -412,7 +488,8 @@ public:
             if (missing_faces) warnings.append(String::num_int64(missing_faces) + " faces have no triangulation.");
             Dictionary stats;
             stats["faces"] = converter.numFaces(); stats["solids"] = converter.numSolids(); stats["shells"] = converter.numShells();
-            stats["unique_bodies"] = bodies.size(); stats["triangles"] = total_triangles; stats["missing_faces"] = missing_faces;
+            stats["unique_bodies"] = int64_t(cache.size()); stats["triangles"] = total_triangles; stats["missing_faces"] = missing_faces;
+            stats["lines"] = total_lines; stats["missing_edges"] = missing_edges;
             stats["unit_to_millimeters"] = parsed.unitToMillimeters;
             stats["units"] = parsed.unitToMillimeters > 0.0
                 ? String::num(parsed.unitToMillimeters) + " mm per source unit" : String("unknown (source coordinates)");

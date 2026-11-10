@@ -30,7 +30,8 @@ godot-cpp 使用已有 Godot 4.1.4 单精度 Release 库，已在当前 Godot 4.
 - 装配节点、名称、persistentId、局部矩阵及实例编号；相同形体只三角化一次；跨视口共享网格、独立显隐与变换。
 - BREP 结构树从源数据根节点开始，直接列在“三维数据”下，不显示文件名行和内部 `layer_*` 容器；源装配层级保持原样。源根节点行承接整份数据的显隐复选框和数据属性/操作，文件名保留在悬浮提示中。裸几何有多个根形体时并列显示，加载中或失败时保留文件行以查看状态与错误。
 - OCC 回退路径的装配 `repBodyIndex` 按源 solid/shell 索引查询修复结果；支持一个源形体拆成多个结果实体或壳，以及源实体修复后只剩开壳。每个实例包含全部结果，保留源形体身份并共享结果网格。
-- 每个 body 一个网格 surface；离散路径分别创建面和线段网格；孔洞、反向面和 TopLoc 变换；保留面/壳/实体及三角形区间。
+- GEOM 和 OCC 回退路径均分别创建面与线段网格，每个网格一个 surface。OCC 面三角化后枚举拓扑边，在每个结果形体内去重共享边和接缝边，跳过退化边；优先复用 `PolygonOnTriangulation` 的边界节点，其次使用已有 `Polygon3D`，没有折线时通过 `BRepAdaptor_Curve / GCPnts_TangentialDeflection` 按同一线性偏差及 0.4 弧度角偏差采样。保留 TopLoc 变换、闭合边的末段及孔洞内边界，三角形内部对角线不作为边输出。
+- OCC 面和线网格在装配实例间共享；面拾取仍只检测三角形。`stats.lines` 统计唯一网格中的线段，`missing_edges` 统计离散失败的非退化边并记录警告，单模型最多 400 万线段，单形体最多 600 万边线顶点。`brep_edge_ranges` 保存形体内重建后的边序号及线段区间，不作为原始源边索引。OCC 的 `unique_bodies` 仍统计结果形体数量，不因新增边线网格翻倍。
 - 单击 BREP 网格高亮命中的完整面（保留孔洞），同步展开并定位结构树中的对应形体，属性显示面索引和持久 ID。选择树中的形体、零件、装配或图层时高亮全部对应网格，支持 Ctrl 多选；点击空白清除。高亮按视口和实例独立，跟随镜像/非均匀变换、显隐和透明度，保留深度遮挡；不修改共享网格、材质、拾取缓存或模型包围盒。`hit.brep`、`object_persistent_id` 与 `occurrence` 保持可用。
 - CAD/ALL 导出携带扩展、现有 CAD/OCCT DLL、MSVC 动态运行库及 SHA256 清单，启动检查扩展注册。
 - 选中面后，属性面板顶部同时显示“原始 BREP JSON”和“OCC 重构后 BREP JSON”，各自提供只读滚动预览与“复制 JSON”。二进制源的原始数据直接调用 `ModelTransfer::BRepFile::separateFaceBrepsToJson`，JSON 源按下述方式调用 SDK 解析器和 JsonWriter；重构结果直接调用 `BRepToTopoDS::separateFaceBrepsToJson`。保留 SDK 返回的完整字符串、格式、字段、double 精度与单位，不再由 DigitalViewer 手动组织曲面/拓扑 JSON。两个 JSON 均采用 brepexpoter 的 `version/unitToMillimeters/vertices/edges/wires/faces/shells/solids` 结构；装配矩阵、显示缩放与 Up 轴不改写定义。
@@ -69,11 +70,13 @@ CNC 透线复查曾采用按导航距离调整近裁剪面的版本，三种渲�
 - 支持 NDSBREP 二进制，不支持 OCCT 文本 BREP，不新增 STEP/IGES/DWG 导入。
 - 默认 CAD 材质，未恢复源材质。支持格式 1.3 的 `unitToMillimeters`（每源坐标单位的毫米数）；旧文件或字段为 0 时显示未知。几何和装配平移保留源坐标，不自动换算；脚本/API 可传 `unit_scale`，在根节点统一缩放一次。CAD/ALL 添加数据界面的 Up 轴只有 `Y-UP`、`Z-UP` 两项，每次打开默认选中 `Y-UP`。BREP 默认不附加旋转，选择 `Z-UP` 时在根节点绕 X 轴转 −90° 一次。文件、装配 JSON 和 ZIP 使用相同设置，未新增单位/精度面板。
 - 网格主线程提交尚未按帧分批，大模型上传时仍可能短暂阻塞。单个二进制 BREP / GEOM 最大 256 MiB、几何/装配 JSON 最大 16 MiB、唯一网格最多 200 万三角形；GEOM 最多 600 万显示顶点、400 万线段，装配最多 10 万节点和 128 层；这些限制不是重建阶段的严格内存上限。
-- OCC 回退路径可传 `deflection_scale`（0.1～10）控制三角化；GEOM 路径保持导出的离散精度。OCCT 单次调用期间不能立即中断，取消在阶段和面之间生效；内核导入串行执行。
+- OCC 回退路径可传 `deflection_scale`（0.1～10）控制面和边的离散精度；GEOM 路径保持导出的离散精度。OCCT 单次调用期间不能立即中断，取消在阶段及面/边之间生效；内核导入串行执行。
 - 超大坐标浮动原点、远程 BREP/装配依赖下载、OCC 路径的纯线体显示和测量待后续版本（GEOM 线段已支持）。远程 JSON 仅探测格式，识别为 BREP 后提示下载到本地打开。
 - ZIP 沿用现有 64 MiB 单项、256 MiB 总展开及 4096 项限制。
 
 ## 验证
+
+OCC 边线回归增加圆环面及共享边夹具，由现有 BRepCore DLL 写出。检查方孔内外八条边、两条圆形边界闭合、曲线边节点与三角化边界完全相同、细化参数同步、相邻两面共享边只生成一次、装配共享边线网格、树选择面与边、面拾取和损坏 GEOM 回退后的边线。构建时发现 SDK 的 BRepCore DLL 已更新；头文件、导入库及其他 DLL 的散列均保持一致，已同步 BRepCore 的固定散列并复制现有 DLL，只重编 DigitalViewer 适配扩展。
 
 `tests/brep_smoke.gd` 使用由 BRepCore DLL 写出的带孔平面及拓扑拆分夹具；生成源为 `addons/brep/native/make_fixture.cpp`，`Build-BRep.ps1 -GenerateTestFixtures` 可重新生成新版夹具。检查面积 84、射线穿孔、源面 ID、镜像非均匀实例、中文目录、重复实例、双视口共享、重载、移除期间取消、JSON 分派与 ZIP 依赖。新增 1.3 英寸单位、旧文件未知单位、显式显示缩放、源壳拆分、开壳源实体、拆分后的共享与源 ID、源索引越界验证。已增加面点击与树节点高亮回归：同一 body 中两个独立面、命中面范围、实例隔离、树多选与刷新、变换、显隐、透明度、删除/重载清理和真实装配面选择；图形模式还验证高亮像素与前景遮挡。
 

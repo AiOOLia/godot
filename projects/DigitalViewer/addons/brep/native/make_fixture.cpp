@@ -45,7 +45,26 @@ int main(int argc, char **argv) {
         }
         face->wires.push_back(std::move(wire));
     };
-    if (split) {
+    if (mode == "curved-edges") {
+        face->area = 21 * std::acos(-1.0);
+        face->perimeter = 14 * std::acos(-1.0);
+        for (double radius : {5.0, 2.0}) {
+            auto vertex = std::make_shared<NDSVertex>(); vertex->point = {radius, 0, 0}; vertex->tolerance = 1e-7;
+            auto edge = std::make_shared<NDSEdge>(); edge->startVertex = edge->endVertex = vertex;
+            edge->length = 2 * std::acos(-1.0) * radius; edge->tolerance = 1e-7;
+            edge->hasTrimDomain = true; edge->trimMin = 0; edge->trimMax = 2 * std::acos(-1.0);
+            auto circle = std::make_unique<NDSCircle>(); circle->radius = radius;
+            for (int i = 0; i < 3; ++i) {
+                circle->center[i] = 0; circle->normal[i] = i == 2 ? 1 : 0; circle->axisX[i] = i == 0 ? 1 : 0;
+            }
+            edge->pCurve = std::move(circle);
+            auto use = std::make_shared<NDSDirectedEdge>(); use->edge = edge; use->reverse = radius == 2.0;
+            auto wire = std::make_unique<NDSWire>(); wire->edges.push_back(use); face->wires.push_back(std::move(wire));
+        }
+    } else if (mode == "shared-edge") {
+        face->area = 1; face->perimeter = 4;
+        ring({{0,0,0}, {1,0,0}, {1,1,0}, {0,1,0}});
+    } else if (split) {
         // Two disconnected regions in one source face, matching the NDS repair regression.
         ring({{-4,-1,0}, {-2,-1,0}, {-2,1,0}, {-4,1,0}});
         ring({{2,-1,0}, {4,-1,0}, {4,1,0}, {2,1,0}});
@@ -56,6 +75,20 @@ int main(int argc, char **argv) {
     auto use = std::make_unique<NDSDirectedFace>(); use->face = face; use->reverse = false;
     auto shell = std::make_unique<NDSShell>(); shell->area = split ? 8 : 84; shell->faces.push_back(std::move(use));
     std::unique_ptr<NDSShell> second_shell;
+    if (mode == "shared-edge") {
+        auto shared = (*std::next(face->wires.front()->edges.begin()))->edge;
+        face = std::make_shared<NDSFace>(); face->persistentId = 43; face->area = 1; face->perimeter = 4;
+        auto surface = std::make_unique<NDSPlane>();
+        for (int i = 0; i < 3; ++i) {
+            surface->origin[i] = 0; surface->normal[i] = i == 2 ? 1 : 0; surface->axisX[i] = i == 0 ? 1 : 0;
+        }
+        face->pSurf = std::move(surface);
+        ring({{1,0,0}, {2,0,0}, {2,1,0}, {1,1,0}});
+        face->wires.front()->edges.back()->edge = shared;
+        face->wires.front()->edges.back()->reverse = true;
+        auto use = std::make_unique<NDSDirectedFace>(); use->face = face; shell->faces.push_back(std::move(use));
+        shell->area = 2;
+    }
     if (mode == "duplicate-id" || mode == "shell-duplicate-id") {
         face = std::make_shared<NDSFace>(); face->persistentId = 42;
         auto plane2 = std::make_unique<NDSPlane>();

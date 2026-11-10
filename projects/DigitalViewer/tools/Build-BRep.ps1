@@ -49,7 +49,7 @@ if ($GenerateTestFixtures) {
     Copy-Item -LiteralPath (Join-Path $outputPath 'BRepCore.dll') -Destination $fixtureBinaryPath
     $fixturePath = Join-Path $projectPath 'build/brep/fixtures'
     New-Item -ItemType Directory -Force -Path $fixturePath | Out-Null
-    foreach ($mode in @('units', 'split-shell', 'split-solid', 'nurbs', 'zero-id', 'duplicate-id', 'shell-duplicate-id', 'tessellation')) {
+    foreach ($mode in @('units', 'split-shell', 'split-solid', 'nurbs', 'zero-id', 'duplicate-id', 'shell-duplicate-id', 'tessellation', 'curved-edges', 'shared-edge')) {
         & (Join-Path $fixtureBinaryPath 'BRepFixture.exe') $fixturePath $mode
         if ($LASTEXITCODE -ne 0) { throw "BREP fixture generation failed: $mode" }
         [Convert]::ToBase64String([IO.File]::ReadAllBytes((Join-Path $fixturePath "$mode.brep"))) | Set-Content -LiteralPath (Join-Path $projectPath "tests/fixtures/$mode.brep.base64.txt") -Encoding ascii

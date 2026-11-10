@@ -71,7 +71,12 @@ func run(shell: Control) -> void:
 		var a: MeshInstance3D = layer.node.get_child(0).get_child(0).get_child(0)
 		var b: MeshInstance3D = layer.node.get_child(0).get_child(1).get_child(0)
 		check(a.mesh == b.mesh, "instances share mesh resources")
-		check(not a.mesh.surface_get_material(0).depth_bias_enabled, "BREP without edge geometry keeps unbiased surface depth")
+		check(a.mesh.surface_get_material(0).depth_bias_enabled, "OCC faces enable hardware bias when reconstructed edges are present")
+		var edge_a: MeshInstance3D = a.get_parent().get_child(1)
+		var edge_b: MeshInstance3D = b.get_parent().get_child(1)
+		check(record.brep_stats.lines == 8 and record.brep_stats.missing_edges == 0, "OCC square and hole produce eight boundary segments")
+		check(edge_a.mesh == edge_b.mesh and edge_a.mesh.get_meta("brep_lines") and edge_a.mesh.surface_get_primitive_type(0) == Mesh.PRIMITIVE_LINES, "OCC instances share their line mesh")
+		check(edge_a.mesh.get_meta("brep_edge_ranges").size() == 8 and not edge_a.mesh.surface_get_material(0).depth_bias_enabled, "OCC edge ranges are retained with ordinary line depth")
 		check(is_equal_approx(b.get_parent().position.x, 20), "column-major assembly translation applied")
 		check(a.get_meta("brep_persistent_id") == 10, "persistent ID retained")
 		check(not a.mesh.get_meta("brep_face_ranges").is_empty(), "face ranges retained")
@@ -152,6 +157,7 @@ func run(shell: Control) -> void:
 	for frame in 30: await get_tree().process_frame
 	check(not AppState.views[view].get_layer(remove_id), "in-flight removal does not publish stale result")
 	await _updated_sdk(directory, view)
+	_occ_edges(directory)
 	await _definition_fixtures(directory, view, shell)
 	await _json_imports(directory, view, shell, AppState.views[view].get_layer(layer_id))
 	await _tessellation_imports(directory, view, shell)
@@ -316,7 +322,7 @@ func _selection(shell: Control, view_id: String, layer: Dictionary, a: MeshInsta
 	sample.scale = Vector3.ONE
 	var assembly_key := "node:%s:%d" % [layer.id, layer.node.get_child(0).get_instance_id()]
 	pane._activate_tree_item(pane._items[assembly_key])
-	check(view._selection_highlight.entries.size() == 2, "tree assembly selects all descendant bodies")
+	check(view._selection_highlight.entries.size() == 4, "tree assembly selects descendant faces and edges")
 	var a_key := "node:%s:%d" % [layer.id, a.get_instance_id()]
 	var b_key := "node:%s:%d" % [layer.id, b.get_instance_id()]
 	pane._selected_keys.clear()
@@ -374,7 +380,7 @@ func _root_controls(pane: Control, layer: Dictionary, shell: Control) -> void:
 	AppState.activate(pane.view_id, "layer", layer.id)
 	check(pane._selected_keys == pane._layer_root_keys[layer.id], "dataset selection maps to its visible source roots")
 	pane._activate_tree_item(pane._items[key])
-	check(view.selection_kind == "node" and view.selected_node.get_ref() == layer.node.get_child(0) and view._selection_highlight.entries.size() == 2, "source root selects and highlights the actual assembly")
+	check(view.selection_kind == "node" and view.selected_node.get_ref() == layer.node.get_child(0) and view._selection_highlight.entries.size() == 4, "source root selects and highlights the actual assembly faces and edges")
 	var buttons: Array[Node] = shell._property_fields.find_children("*", "Button", true, false)
 	check(shell._property_title.text == str(layer.node.get_child(0).name) and buttons.any(func(button: Button): return button.text == tr("Reload")) and buttons.any(func(button: Button): return button.text == tr("Remove")), "actual source root properties retain dataset reload and remove actions")
 	pane._items[key].collapsed = true
@@ -462,13 +468,14 @@ func _updated_sdk(directory: String, view: String) -> void:
 			if mode == "split-solid": check(stats.source_solids == 1 and stats.solids == 0, "open source solid maps to result shells")
 			var first: Node3D = layer.node.get_child(0).get_child(0)
 			var second: Node3D = layer.node.get_child(0).get_child(1)
-			check(first.get_child_count() == 2 and second.get_child_count() == 2, mode + " occurrence contains all repaired bodies")
+			check(first.get_child_count() == 4 and second.get_child_count() == 4, mode + " occurrence contains all repaired faces and edges")
 			AppState.activate(view, "node", layer.id, first)
-			check(AppState.views[view]._selection_highlight.entries.size() == 2, mode + " selecting source occurrence highlights every repaired body")
-			if first.get_child_count() == 2 and second.get_child_count() == 2:
-				check(first.get_child(0).mesh == second.get_child(0).mesh and first.get_child(1).mesh == second.get_child(1).mesh, mode + " repeated repaired bodies share meshes")
-				check(first.get_child(0).get_meta("brep_source_body_index") == 0 and first.get_child(1).get_meta("brep_source_body_index") == 0, mode + " source identity retained across split")
+			check(AppState.views[view]._selection_highlight.entries.size() == 4, mode + " selecting source occurrence highlights every repaired face and edge mesh")
+			if first.get_child_count() == 4 and second.get_child_count() == 4:
+				check(range(4).all(func(i): return first.get_child(i).mesh == second.get_child(i).mesh), mode + " repeated repaired faces and edges share meshes")
+				check(first.get_child(0).get_meta("brep_source_body_index") == 0 and first.get_child(2).get_meta("brep_source_body_index") == 0, mode + " source identity retained across split")
 				for body: MeshInstance3D in first.get_children():
+					if body.mesh.get_meta("brep_lines", false): continue
 					var ranges: Array = body.mesh.get_meta("brep_face_ranges")
 					check(ranges.size() == 1 and ranges[0].persistent_id == 42, mode + " split faces retain source persistent ID")
 					var pair := _json_pair(body.mesh, ranges[0])
@@ -480,6 +487,39 @@ func _updated_sdk(directory: String, view: String) -> void:
 		var invalid_id: String = AppState.add_source(view, invalid)
 		var invalid_layer := await wait_layer(view, invalid_id)
 		check(invalid_layer.status == "Failed" and "source" in invalid_layer.error and "out of range" in invalid_layer.error, mode + " validates source index rather than result index")
+
+func _occ_edges(directory: String) -> void:
+	for mode in ["curved-edges", "shared-edge"]:
+		var path := directory.path_join(mode + ".brep")
+		var file := FileAccess.open(path, FileAccess.WRITE)
+		file.store_buffer(Marshalls.base64_to_raw(FileAccess.get_file_as_string("res://tests/fixtures/%s.brep.base64.txt" % mode).strip_edges()))
+		file.close()
+		var document: RefCounted = ClassDB.instantiate("BRepDocument")
+		var result: Dictionary = document.call("import_model", path, "", {})
+		check(result.error.is_empty(), mode + " OCC import succeeds: " + str(result.error))
+		if not result.error.is_empty(): continue
+		check(result.stats.geometry_source == "occ" and result.stats.lines > 0 and result.stats.missing_edges == 0, mode + " OCC emits edge segments without GEOM")
+		var surfaces: Array = result.bodies.filter(func(body: Dictionary): return not body.get("lines", false))
+		var lines: Array = result.bodies.filter(func(body: Dictionary): return body.get("lines", false))
+		check(surfaces.size() == 1 and lines.size() == 1 and result.nodes[0].bodies.size() == 2, mode + " body references both surface and edge buffers")
+		if surfaces.size() != 1 or lines.size() != 1: continue
+		var edges: Dictionary = lines[0]
+		if mode == "shared-edge":
+			check(edges.edge_ranges.size() == 7 and edges.indices.size() == 14, "shared OCC edge is emitted once, without triangle diagonals")
+		else:
+			check(edges.edge_ranges.size() == 2 and edges.indices.size() > 32, "both circular boundaries are tessellated into polylines")
+			var face_vertices := {}
+			for vertex: Vector3 in surfaces[0].vertices: face_vertices[vertex] = true
+			var on_boundary := true
+			for vertex: Vector3 in edges.vertices:
+				on_boundary = on_boundary and face_vertices.has(vertex) and minf(absf(vertex.length() - 2.0), absf(vertex.length() - 5.0)) < 0.00001
+			check(on_boundary, "OCC curved edges reuse the exact triangulation boundary nodes")
+			for edge: Dictionary in edges.edge_ranges:
+				var first: Vector3 = edges.vertices[edges.indices[edge.line_first * 2]]
+				var last: Vector3 = edges.vertices[edges.indices[(edge.line_first + edge.line_count) * 2 - 1]]
+				check(first.is_equal_approx(last), "closed circular OCC edge retains its closing segment")
+			var refined: Dictionary = document.call("import_model", path, "", {"deflection_scale": 0.1})
+			check(refined.error.is_empty() and refined.stats.lines > result.stats.lines, "OCC face and edge refinement uses the same deflection setting")
 
 func _json_imports(directory: String, view_id: String, shell: Control, original: Dictionary) -> void:
 	var seed_bodies: Array[Node] = original.node.find_children("*", "MeshInstance3D", true, false)
@@ -645,12 +685,14 @@ func _tessellation_imports(directory: String, view_id: String, shell: Control) -
 	ids.append(bad_id)
 	var bad_layer := await wait_layer(view_id, bad_id)
 	check(bad_layer.status == "Ready" and AppState.store.records[bad_layer.data_id].brep_stats.geometry_source == "occ" and not AppState.store.records[bad_layer.data_id].brep_warnings.is_empty(), "missing GEOM object references fall back to OCC with a diagnostic")
+	if bad_layer.status == "Ready": check(AppState.store.records[bad_layer.data_id].brep_stats.lines == 8, "GEOM reference fallback retains OCC boundary edges")
 	var backup := FileAccess.get_file_as_bytes(geom)
 	write(geom, "NDSGEOM")
 	var corrupt_id: String = AppState.add_source(view_id, binary)
 	ids.append(corrupt_id)
 	var corrupt := await wait_layer(view_id, corrupt_id)
 	check(corrupt.status == "Ready" and AppState.store.records[corrupt.data_id].brep_stats.geometry_source == "occ", "truncated GEOM safely falls back to OCC")
+	if corrupt.status == "Ready": check(AppState.store.records[corrupt.data_id].brep_stats.lines == 8, "corrupt GEOM fallback retains OCC boundary edges")
 	var file := FileAccess.open(geom, FileAccess.WRITE)
 	file.store_buffer(backup)
 	file.close()
@@ -773,7 +815,7 @@ func _definition_fixtures(directory: String, view: String, shell: Control) -> vo
 				shell._brep_inspector.inspect(body.mesh.get_meta("brep_document"), face.face_index)
 				await get_tree().process_frame
 		if mode == "duplicate-id":
-			var bodies: Array[Node] = layer.node.find_children("*", "MeshInstance3D", true, false)
+			var bodies: Array[Node] = layer.node.find_children("*", "MeshInstance3D", true, false).filter(func(n: Node): return not n.mesh.get_meta("brep_lines", false))
 			var first_mesh: ArrayMesh = bodies[0].mesh
 			var last_mesh: ArrayMesh = bodies.back().mesh
 			var first_face: Dictionary = first_mesh.get_meta("brep_face_ranges")[0]
